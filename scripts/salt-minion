@@ -24,4 +24,7 @@ if __name__ == "__main__":
     # This handles the bootstrapping code that is included with frozen
     # scripts. It is a no-op on unfrozen code.
     freeze_support()
+
+    import resource
+    resource.setrlimit(resource.RLIMIT_NOFILE, (8192, 8192))
     salt_minion()
