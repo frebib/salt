@@ -8,6 +8,7 @@ import logging
 import os.path
 import pipes
 import pprint
+import random
 import re
 import time
 import uuid
@@ -949,6 +950,8 @@ class SerializerExtension(Extension):
         "profile",
     }
 
+    _CacheSingleton = ("cache_singleton", random.random())
+
     def __init__(self, environment):
         super().__init__(environment)
         self.environment.filters.update(
@@ -969,6 +972,9 @@ class SerializerExtension(Extension):
                 "zip": zip,
                 "zip_longest": itertools.zip_longest,
             }
+        )
+        self.environment.extend(
+            import_caching=False,
         )
 
         if self.environment.finalize is None:
@@ -1232,6 +1238,62 @@ class SerializerExtension(Extension):
                 ).set_lineno(lineno),
             ).set_lineno(lineno),
         ]
+        # enable caching only if render context is consistent.
+        if not import_node.with_context and self.environment.import_caching:
+
+            def mk_key():
+                return nodes.Concat(
+                    [
+                        nodes.Const("_import_{}_cache_".format(converter)),
+                        import_node.template,
+                    ],
+                )
+
+            def get_salt_func(name):
+                return nodes.Getitem(
+                    nodes.Getattr(nodes.ContextReference(), "salt", "load"),
+                    nodes.Const(name),
+                    "load",
+                )
+
+            # pseudo logic here is:
+            # obj = from_cache(key, singleton)
+            # if obj == singleton:
+            #   < do import body >
+            #   set_cache(key, obj)
+            body = [
+                nodes.Assign(
+                    nodes.Name(target, "store"),
+                    nodes.Call(
+                        get_salt_func("context.get"),
+                        [],
+                        [],
+                        nodes.List([mk_key(), self.attr("_CacheSingleton")]),
+                        None,
+                    ),
+                ).set_lineno(lineno),
+                # compare the result; if it's the singleton, we must load.
+                nodes.If(
+                    nodes.Compare(
+                        nodes.Name(target, "load"),
+                        [nodes.Operand("eq", self.attr("_CacheSingleton"))],
+                    ),
+                    body
+                    + [
+                        nodes.ExprStmt(
+                            nodes.Call(
+                                get_salt_func("context.set"),
+                                [],
+                                [],
+                                nodes.List([mk_key(), nodes.Name(target, "load")]),
+                                None,
+                            ),
+                        ),
+                    ],
+                    [],
+                    [],  # elif and else blocks
+                ).set_lineno(lineno),
+            ]
         return self._parse_profile_block(
             parser, import_node.template, "import_{}".format(converter), body, lineno
         )
