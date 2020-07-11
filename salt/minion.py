@@ -240,7 +240,7 @@ def resolve_dns(opts, fallback=True):
             "Using %d as source port for the master pub", ret["source_publish_port"]
         )
     ret["master_uri"] = "tcp://{ip}:{port}".format(
-        ip=ret["master_ip"], port=opts["master_port"]
+        ip=salt.utils.zeromq.ip_bracket(ret["master_ip"]), port=opts["master_port"]
     )
     log.debug("Master URI: %s", ret["master_uri"])
 

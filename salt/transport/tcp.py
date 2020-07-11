@@ -44,6 +44,7 @@ import salt.utils.msgpack
 import salt.utils.platform
 import salt.utils.process
 import salt.utils.verify
+import salt.utils.zeromq
 from salt.exceptions import SaltClientError, SaltReqTimeoutError
 from salt.ext import six
 from salt.ext.six.moves import queue  # pylint: disable=import-error
@@ -201,11 +202,17 @@ if USE_LOAD_BALANCER:
             """
             Start the load balancer
             """
-            self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            af, stype, proto, unused, sa = socket.getaddrinfo(
+                self.opts["interface"],
+                int(self.opts["ret_port"]),
+                socket.AF_UNSPEC,
+                socket.SOCK_STREAM,
+            )[0]
+            self._socket = socket.socket(af, stype, proto)
             self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             _set_tcp_keepalive(self._socket, self.opts)
             self._socket.setblocking(1)
-            self._socket.bind((self.opts["interface"], int(self.opts["ret_port"])))
+            self._socket.bind(sa)
             self._socket.listen(self.backlog)
 
             while True:
@@ -311,12 +318,11 @@ class AsyncTCPReqChannel(salt.transport.client.ReqChannel):
         resolver = kwargs.get("resolver")
 
         parse = urlparse.urlparse(self.opts["master_uri"])
-        master_host, master_port = parse.netloc.rsplit(":", 1)
-        self.master_addr = (master_host, int(master_port))
+        self.master_addr = (parse.hostname, parse.port,)
         self._closing = False
         self.message_client = SaltMessageClientPool(
             self.opts,
-            args=(self.opts, master_host, int(master_port),),
+            args=(self.opts, parse.hostname, parse.port,),
             kwargs={
                 "io_loop": self.io_loop,
                 "resolver": resolver,
@@ -704,11 +710,17 @@ class TCPReqServerChannel(
                 LoadBalancerServer, args=(self.opts, self.socket_queue)
             )
         elif not salt.utils.platform.is_windows():
-            self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            af, stype, proto, unused, sa = socket.getaddrinfo(
+                self.opts["interface"],
+                int(self.opts["ret_port"]),
+                socket.AF_UNSPEC,
+                socket.SOCK_STREAM,
+            )[0]
+            self._socket = socket.socket(af, stype, proto)
             self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             _set_tcp_keepalive(self._socket, self.opts)
             self._socket.setblocking(0)
-            self._socket.bind((self.opts["interface"], int(self.opts["ret_port"])))
+            self._socket.bind(sa)
 
     def post_fork(self, payload_handler, io_loop):
         """
@@ -981,7 +993,7 @@ class TCPClientKeepAlive(salt.ext.tornado.tcpclient.TCPClient):
         """
         # Always connect in plaintext; we'll convert to ssl if necessary
         # after one connection has completed.
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock = socket.socket(af, socket.SOCK_STREAM)
         _set_tcp_keepalive(sock, self.opts)
         stream = salt.ext.tornado.iostream.IOStream(
             sock, max_buffer_size=max_buffer_size
@@ -1234,7 +1246,7 @@ class SaltMessageClient(object):
                 except salt.ext.tornado.iostream.StreamClosedError as e:
                     log.debug(
                         "tcp stream to %s:%s closed, unable to recv",
-                        self.host,
+                        salt.utils.zeromq.ip_bracket(self.host),
                         self.port,
                     )
                     for future in six.itervalues(self.send_future_map):
@@ -1625,11 +1637,17 @@ class TCPPubServerChannel(salt.transport.server.PubServerChannel):
 
         # Spin up the publisher
         pub_server = PubServer(self.opts, io_loop=self.io_loop)
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        af, stype, proto, unused, sa = socket.getaddrinfo(
+            self.opts["interface"],
+            int(self.opts["publish_port"]),
+            socket.AF_UNSPEC,
+            socket.SOCK_STREAM,
+        )[0]
+        sock = socket.socket(af, stype, proto)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         _set_tcp_keepalive(sock, self.opts)
         sock.setblocking(0)
-        sock.bind((self.opts["interface"], int(self.opts["publish_port"])))
+        sock.bind(sa)
         sock.listen(self.backlog)
         # pub_server will take ownership of the socket
         pub_server.add_socket(sock)

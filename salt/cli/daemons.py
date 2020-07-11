@@ -184,7 +184,8 @@ class Master(
             self.config["ret_port"],
         ):
             self.shutdown(4, "The ports are not available to bind")
-        self.config["interface"] = ip_bracket(self.config["interface"])
+        if self.config['transport'].lower() != 'tcp':
+            self.config["interface"] = ip_bracket(self.config["interface"])
         migrations.migrate_paths(self.config)
 
         # Late import so logging works correctly

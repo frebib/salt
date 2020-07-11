@@ -2088,7 +2088,7 @@ def dns_check(addr, port, safe=False, ipv6=None):
             raise SaltClientError()
         raise SaltSystemExit(code=42, msg=err)
 
-    return salt.utils.zeromq.ip_bracket(ip_addrs[0])
+    return ip_addrs[0]
 
 
 def _test_addrs(addrinfo, port):
