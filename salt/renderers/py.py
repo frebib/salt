@@ -131,6 +131,8 @@ def render(template, saltenv="base", sls="", tmplpath=None, **kws):
     if not os.path.isfile(template):
         raise SaltRenderError("Template {0} is not a file!".format(template))
 
+    pillar = kws.pop("pillar", __pillar__),
+
     tmp_data = salt.utils.templates.py(
         template,
         True,
@@ -140,8 +142,8 @@ def render(template, saltenv="base", sls="", tmplpath=None, **kws):
         grains=__grains__,
         __opts__=__opts__,
         opts=__opts__,
-        __pillar__=__pillar__,
-        pillar=__pillar__,
+        __pillar__=pillar,
+        pillar=pillar,
         __env__=saltenv,
         saltenv=saltenv,
         __sls__=sls,

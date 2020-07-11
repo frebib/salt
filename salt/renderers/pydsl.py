@@ -369,7 +369,7 @@ def render(template, saltenv="base", sls="", tmplpath=None, rendered_sls=None, *
         __salt__=__salt__,
         __grains__=__grains__,
         __opts__=__opts__,
-        __pillar__=__pillar__,
+        __pillar__=kws.pop("pillar", __pillar__),
         __env__=saltenv,
         __sls__=sls,
         __file__=tmplpath,
