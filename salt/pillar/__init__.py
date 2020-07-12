@@ -27,6 +27,7 @@ import salt.utils.cache
 import salt.utils.crypt
 import salt.utils.data
 import salt.utils.dictupdate
+import salt.utils.extmods
 import salt.utils.url
 from salt.exceptions import SaltClientError
 
@@ -528,6 +529,9 @@ class Pillar(object):
         self.merge_strategy = "smart"
         if opts.get("pillar_source_merging_strategy"):
             self.merge_strategy = opts["pillar_source_merging_strategy"]
+
+        # Sync ext_pillar modules before loading them
+        salt.utils.extmods.sync(self.opts, "pillar", saltenv=saltenv)
 
         self.ext_pillars = salt.loader.pillars(ext_pillar_opts, self.functions)
         self.ignored_pillars = {}
