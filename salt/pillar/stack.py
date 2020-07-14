@@ -379,15 +379,14 @@ from __future__ import absolute_import, print_function, unicode_literals
 import functools
 import glob
 import os
-import posixpath
 import logging
-
-from jinja2 import FileSystemLoader, Environment
 
 # Import Salt libs
 from salt.ext import six
+import salt.loader
+import salt.template
 import salt.utils.data
-import salt.utils.jinja
+import salt.utils.stringio
 import salt.utils.yaml
 
 log = logging.getLogger(__name__)
@@ -420,27 +419,31 @@ def ext_pillar(minion_id, pillar, *args, **kwargs):
     return stack
 
 
-def _to_unix_slashes(path):
-    return posixpath.join(*path.split(os.sep))
-
-
 def _process_stack_cfg(cfg, stack, minion_id, pillar):
-    log.debug('Config: %s', cfg)
-    basedir, filename = os.path.split(cfg)
-    jenv = Environment(loader=FileSystemLoader(basedir), extensions=['jinja2.ext.do', salt.utils.jinja.SerializerExtension])
-    jenv.globals.update({
-        "__opts__": __opts__,
-        "__salt__": __salt__,
-        "__grains__": __grains__,
+    default_renderer = "jinja|yaml"
+    renderers = salt.loader.render(__opts__, __salt__)
+
+    tmpl_args = {
         "__stack__": {
             'traverse': salt.utils.data.traverse_dict_and_list,
             'cfg_path': cfg,
-            },
+        },
         "minion_id": minion_id,
         "pillar": pillar,
-        })
-    for item in _parse_stack_cfg(
-            jenv.get_template(filename).render(stack=stack)):
+    }
+
+    basedir, _ = os.path.split(cfg)
+    stack_cfg = salt.template.compile_template(
+        cfg,
+        renderers,
+        "jinja",
+        __opts__["renderer_blacklist"],
+        __opts__["renderer_whitelist"],
+        saltenv=None,
+        stack=stack,
+        **tmpl_args)
+
+    for item in _parse_stack_cfg(stack_cfg):
         if not item.strip():
             continue  # silently ignore whitespace or empty lines
         paths = glob.glob(os.path.join(basedir, item))
@@ -451,10 +454,17 @@ def _process_stack_cfg(cfg, stack, minion_id, pillar):
             )
             continue
         for path in sorted(paths):
-            log.debug('YAML: basedir=%s, path=%s', basedir, path)
-            # FileSystemLoader always expects unix-style paths
-            unix_path = _to_unix_slashes(os.path.relpath(path, basedir))
-            obj = salt.utils.yaml.safe_load(jenv.get_template(unix_path).render(stack=stack, ymlpath=path))
+            ret = salt.template.compile_template(
+                path,
+                renderers,
+                default_renderer,
+                __opts__["renderer_blacklist"],
+                __opts__["renderer_whitelist"],
+                saltenv=None,
+                stack=stack,
+                **tmpl_args)
+
+            obj = ret.read() if salt.utils.stringio.is_readable(ret) else ret
             if not isinstance(obj, dict):
                 log.info('Ignoring pillar stack template "%s": Can\'t parse '
                          'as a valid yaml dictionary', path)
@@ -530,10 +540,15 @@ def _parse_stack_cfg(content):
     '''
     Allow top level cfg to be YAML
     '''
+    if salt.utils.stringio.is_readable(content):
+        content = content.read()
+    # Attempt to parse blob as a YAML list
     try:
-        obj = salt.utils.yaml.safe_load(content)
-        if isinstance(obj, list):
-            return obj
-    except Exception as e:
+        content = salt.utils.yaml.safe_load(content)
+    except salt.utils.yaml.YAMLError as err:
         pass
+    if isinstance(content, list):
+        return content
+    # FIXME: handle stack.cfg mapping type
+    # Fallback to just treating the blob as a list of file globs/names
     return content.splitlines()
