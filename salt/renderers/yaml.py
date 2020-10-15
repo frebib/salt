@@ -8,14 +8,16 @@ For YAML usage information see :ref:`Understanding YAML <yaml>`.
 import logging
 import warnings
 
+from yaml.constructor import ConstructorError
+from yaml.parser import ParserError
+from yaml.scanner import ScannerError
+
+import salt.utils.cloudflare
 import salt.utils.url
 import salt.utils.yamlloader as yamlloader_new
 import salt.utils.yamlloader_old as yamlloader_old
 from salt.exceptions import SaltRenderError
 from salt.utils.odict import OrderedDict
-from yaml.constructor import ConstructorError
-from yaml.parser import ParserError
-from yaml.scanner import ScannerError
 
 log = logging.getLogger(__name__)
 
@@ -63,8 +65,10 @@ def render(yaml_data, saltenv="base", sls="", argline="", **kws):
         except ScannerError as exc:
             err_type = _ERROR_MAP.get(exc.problem, exc.problem)
             line_num = exc.problem_mark.line + 1
-            raise SaltRenderError(
-                err_type, line_num, exc.problem_mark.buffer or yaml_data
+            context = exc.problem_mark.buffer or yaml_data
+            # Raise error, but log potentially sensitive context elsewhere
+            salt.utils.cloudflare.cf_redirect_context(
+                SaltRenderError, err_type, line_num, context
             )
         except (ParserError, ConstructorError) as exc:
             raise SaltRenderError(exc)

@@ -13,10 +13,12 @@ import datetime
 import logging
 
 import yaml
-from salt.serializers import DeserializationError, SerializationError
-from salt.utils.odict import OrderedDict
 from yaml.constructor import ConstructorError
 from yaml.scanner import ScannerError
+
+import salt.utils.cloudflare
+from salt.serializers import DeserializationError, SerializationError
+from salt.utils.odict import OrderedDict
 
 __all__ = ["deserialize", "serialize", "available"]
 
@@ -48,7 +50,10 @@ def deserialize(stream_or_string, **options):
         log.exception("Error encountered while deserializing")
         err_type = ERROR_MAP.get(error.problem, "Unknown yaml render error")
         line_num = error.problem_mark.line + 1
-        raise DeserializationError(err_type, line_num, error.problem_mark.buffer)
+        # Raise error, but log potentially sensitive context elsewhere
+        salt.utils.cloudflare.cf_redirect_context(
+            DeserializationError, err_type, line_num, error.problem_mark.buffer
+        )
     except ConstructorError as error:
         log.exception("Error encountered while deserializing")
         raise DeserializationError(error)
