@@ -37,6 +37,11 @@ class SaltCall(salt.utils.parsers.SaltCallOptionParser):
         if self.options.master:
             self.config["master"] = self.options.master
 
+        if self.config["fun"].split(".")[0] == "pillar":
+            if self.options.skip_pillars:
+                self.options.skip_pillars = False
+                self.config["skip_pillars"] = False
+
         caller = salt.cli.caller.Caller.factory(self.config)
 
         if self.options.doc:

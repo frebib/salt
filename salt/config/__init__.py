@@ -597,6 +597,11 @@ VALID_OPTS = immutabletypes.freeze(
         "pillar_cache_ttl": int,
         # Pillar cache backend. Defaults to `disk` which stores caches in the master cache
         "pillar_cache_backend": str,
+        # When set to True the minion will no longer initialize any pillars when it
+        # starts.  The pillars can be fetched later via a manual operation like
+        # saltutil.refresh_pillar or similar.  Enabling this option might break pillar
+        # related functionality (e.g. pillar targeter).
+        "skip_pillars": bool,
         # Cache the GPG data to avoid having to pass through the gpg renderer
         "gpg_cache": bool,
         # GPG data cache TTL, in seconds. Has no effect unless `gpg_cache` is True
@@ -1025,6 +1030,7 @@ DEFAULT_MINION_OPTS = immutabletypes.freeze(
         "pillar_cache": False,
         "pillar_cache_ttl": 3600,
         "pillar_cache_backend": "disk",
+        "skip_pillars": False,
         "gpg_cache": False,
         "gpg_cache_ttl": 86400,
         "gpg_cache_backend": "disk",
