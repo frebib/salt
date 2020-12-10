@@ -87,6 +87,7 @@ def _gather_buffer_space():
     else:
         # Avoid loading core grains unless absolutely required
         import platform
+
         import salt.grains.core
 
         # We need to load up ``mem_total`` grain. Let's mimic required OS data.
@@ -280,6 +281,12 @@ VALID_OPTS = immutabletypes.freeze(
         "decrypt_pillar_renderers": list,
         # Treat GPG decryption errors as renderer errors
         "gpg_decrypt_must_succeed": bool,
+        # SALT-231: Toggle behavior of stripping trailing newlines in yaml scalars
+        # containing a single GPG block
+        "cf_strip_encrypted_newlines": bool,
+        # SALT-231: Toggle behavior of stripping trailing newlines within GPG
+        # secrets between 2017.7 (no, preserve) and 2019.2 (yes, strip)
+        "cf_strip_decrypted_newlines": bool,
         # The type of hashing algorithm to use when doing file comparisons
         "hash_type": str,
         # Order of preference for optimized .pyc files (PY3 only)
@@ -1098,6 +1105,8 @@ DEFAULT_MINION_OPTS = immutabletypes.freeze(
         "decrypt_pillar_default": "gpg",
         "decrypt_pillar_renderers": ["gpg"],
         "gpg_decrypt_must_succeed": False,
+        "cf_strip_encrypted_newlines": True,
+        "cf_strip_decrypted_newlines": True,
         # Update intervals
         "roots_update_interval": DEFAULT_INTERVAL,
         "azurefs_update_interval": DEFAULT_INTERVAL,

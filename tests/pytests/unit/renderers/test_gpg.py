@@ -111,18 +111,6 @@ def test_render():
                 assert gpg.render(crypted) == secret
 
 
-def test_render_bytes():
-    """
-    test rendering bytes
-    """
-    key_dir = "/etc/salt/gpgkeys"
-    binfo = b"User more salt."
-
-    with patch("salt.renderers.gpg._get_gpg_exec", MagicMock(return_value=True)):
-        with patch("salt.renderers.gpg._get_key_dir", MagicMock(return_value=key_dir)):
-            assert gpg.render(binfo) == binfo.decode()
-
-
 def test_multi_render():
     key_dir = "/etc/salt/gpgkeys"
     secret = "Use more salt."

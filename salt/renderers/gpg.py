@@ -307,6 +307,8 @@ GPG_CIPHERTEXT = re.compile(
     re.DOTALL,
 )
 GPG_CACHE = None
+GPG_HEADER = salt.utils.stringutils.to_bytes("-----BEGIN PGP MESSAGE-----")
+GPG_FOOTER = salt.utils.stringutils.to_bytes("-----END PGP MESSAGE-----")
 
 
 def _get_gpg_exec():
@@ -400,11 +402,26 @@ def _decrypt_ciphertext(cipher):
         return decrypted_data
 
 
-def _decrypt_ciphertexts(cipher, translate_newlines=False, encoding=None):
+def _decrypt_ciphertexts(plain, translate_newlines=False, encoding=None):
     to_bytes = salt.utils.stringutils.to_bytes
-    cipher = to_bytes(cipher)
+
+    cipher = to_bytes(plain)
     if translate_newlines:
         cipher = cipher.replace(to_bytes(r"\n"), to_bytes("\n"))
+    if not GPG_HEADER in cipher:
+        # No GPG encrypted blocks in `cipher`, return the original value
+        return plain
+
+    # Only if `cipher` contains a single GPG secret, strip any trailing
+    # newlines before decryption.  Otherwise leave whitespace formatting in
+    # place
+    if (
+        __opts__.get("cf_strip_encrypted_newlines", True)
+        and cipher.lstrip().startswith(GPG_HEADER)
+        and cipher.rstrip().endswith(GPG_FOOTER)
+        and len(GPG_CIPHERTEXT.findall(cipher)) == 1
+    ):
+        cipher = cipher.rstrip(to_bytes("\n"))
 
     def replace(match):
         result = to_bytes(_decrypt_ciphertext(match.group()))
@@ -412,9 +429,11 @@ def _decrypt_ciphertexts(cipher, translate_newlines=False, encoding=None):
 
     ret, num = GPG_CIPHERTEXT.subn(replace, to_bytes(cipher))
     if num > 0:
-        # Remove trailing newlines. Without if crypted value initially specified as a YAML multiline
-        # it will conain unexpected trailing newline.
-        ret = ret.rstrip(b"\n")
+        # SALT-231: Toggle behavior of stripping trailing newlines within GPG
+        # secrets between 2017.7 (no, preserve) and 2019.2 (yes, strip)
+        if __opts__.get("cf_strip_decrypted_newlines", True):
+            # Remove trailing newlines from decrypted secret
+            ret = ret.rstrip(b"\n")
     else:
         ret = cipher
 

@@ -216,6 +216,23 @@ def gpg_pillar_decrypted():
 
 
 @pytest.fixture(scope="module")
+def gpg_pillar_decrypted_newlines():
+    """
+    Pillar data structure with GPG blocks decrypted.
+    """
+    return {
+        "secrets": {
+            "vault": {
+                "foo": "supersecret\n",
+                "bar": "this was unencrypted already",
+                "baz": "rosebud\n",
+                "qux": ["foo", "bar", "baz\n"],
+            },
+        },
+    }
+
+
+@pytest.fixture(scope="module")
 def gpg_pillar_yaml_bad():
     """
     Random data pretending to be ciphertext.
@@ -430,6 +447,21 @@ def test_decrypt_pillar_explicit_renderer(
     pillar_obj = salt.pillar.Pillar(opts, grains, "test", "base")
     ret = pillar_obj.compile_pillar()
     assert ret == gpg_pillar_decrypted
+
+
+def test_decrypt_pillar_keep_newlines(
+    salt_master, grains, pillar_homedir, gpg_pillar_decrypted_newlines
+):
+    """
+    Test retaining of trailing newlines when decrypting
+    """
+    opts = salt_master.config.copy()
+    opts["cf_strip_encrypted_newlines"] = False
+    opts["cf_strip_decrypted_newlines"] = False
+    opts["decrypt_pillar"] = ["secrets:vault"]
+    pillar_obj = salt.pillar.Pillar(opts, grains, "test", "base")
+    ret = pillar_obj.compile_pillar()
+    assert ret == gpg_pillar_decrypted_newlines
 
 
 def test_decrypt_pillar_missing_renderer(
