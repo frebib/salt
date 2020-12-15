@@ -1158,6 +1158,7 @@ class RemotePillarTestCase(TestCase):
             "keysize": 2048,
             "renderer": "json",
             "pillarenv": "fake_pillar_env",
+            "pillar_timeout": 60,
             "path_to_add": "fake_data",
             "path_to_add2": {
                 "fake_data5": "fake_data6",
@@ -1190,6 +1191,7 @@ class RemotePillarTestCase(TestCase):
                 "extra_minion_data": {"path_to_add": "fake_data"},
             },
             dictkey="pillar",
+            timeout=opts["pillar_timeout"],
         )
 
     def test_pillar_file_client_master_remote(self):
@@ -1249,6 +1251,7 @@ class AsyncRemotePillarTestCase(TestCase):
             "keysize": 2048,
             "renderer": "json",
             "pillarenv": "fake_pillar_env",
+            "pillar_timeout": 60,
             "path_to_add": "fake_data",
             "path_to_add2": {
                 "fake_data5": "fake_data6",
@@ -1280,6 +1283,7 @@ class AsyncRemotePillarTestCase(TestCase):
                 "extra_minion_data": {"path_to_add": "fake_data"},
             },
             dictkey="pillar",
+            timeout=opts["pillar_timeout"],
         )
 
 

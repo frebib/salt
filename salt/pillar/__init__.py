@@ -262,6 +262,7 @@ class AsyncRemotePillar(RemotePillarMixin):
             ret_pillar = yield self.channel.crypted_transfer_decode_dictentry(
                 load,
                 dictkey="pillar",
+                timeout=self.opts.get("pillar_timeout", 240),
             )
         except salt.crypt.AuthenticationError as exc:
             log.error(exc.message)
@@ -353,6 +354,7 @@ class RemotePillar(RemotePillarMixin):
         ret_pillar = self.channel.crypted_transfer_decode_dictentry(
             load,
             dictkey="pillar",
+            timeout=self.opts.get("pillar_timeout", 240),
         )
 
         if not isinstance(ret_pillar, dict):
