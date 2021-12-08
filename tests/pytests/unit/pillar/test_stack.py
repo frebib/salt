@@ -10,22 +10,22 @@ from tests.support.mock import MagicMock, patch
 def configure_loader_modules():
     loader_globals = {
         "__grains__": {"os": "Debian", "os_family": "Debian"},
-        "__opts__": {"saltenv": "dev", "pillarenv": "dev"},
+        "__opts__": {
+            "saltenv": "dev",
+            "pillarenv": "dev",
+            "renderer_blacklist": None,
+            "renderer_whitelist": None,
+        },
     }
     return {stack: loader_globals}
 
 
 def mock_stack_pillar(mock_output, *args, **kwargs):
-    # mock: jenv.get_template(filename).render(stack=stack)
-    class MockJinja:
-        def __call__(self, *args, **kwargs):
-            return self
-
-        render = MagicMock(side_effect=mock_output)
-
     with patch("os.path.isfile", MagicMock(return_value=True)), patch(
-        "jinja2.environment.Environment.get_template", MockJinja()
-    ), patch("glob.glob", MagicMock(return_value=["/path/to/stack.cfg"])):
+        "salt.loader.render"
+    ), patch("salt.template.compile_template", side_effect=mock_output), patch(
+        "glob.glob", MagicMock(return_value=["/path/to/stack.cfg"])
+    ):
         result = stack.ext_pillar(  # (minion_id, pillar, *args, **kwargs)
             "minion_id", {}, *args, **kwargs
         )
@@ -36,10 +36,7 @@ def test_extpillar_stack1():
 
     mock_output = [
         "/path/to/filename.yml\n",  # mocked contents of /path/to/stack.cfg
-        """
-            foo: foo1 # jinja test
-            bar: bar1
-        """,  # mocked contents of filename.yml
+        {"foo": "foo1", "bar": "bar1"},  # mock loaded contents of filename.yaml
     ]
     fake_dict = {"foo": "foo1", "bar": "bar1"}
 
@@ -75,9 +72,6 @@ def test_extpillar_stack_exceptions():
     # yaml indentation error
     mock_output = [
         "/path/to/filename.yml\n",  # mocked contents of /path/to/stack.cfg
-        """
-                foo: foo1
-            bar: bar1  # yaml indentation error
-        """,  # mocked contents of filename.yml
+        Exception,  # mock error occurring during YAML load
     ]
     pytest.raises(Exception, mock_stack_pillar, mock_output, "/path/to/stack.cfg")

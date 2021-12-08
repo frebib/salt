@@ -428,6 +428,9 @@ def render_jinja_tmpl(tmplstr, context, tmplpath=None):
                 undefined=jinja2.StrictUndefined, **env_args
             )
 
+        # enable caching of import_yaml type calls if allowed.
+        jinja_env.import_caching = bool(opts.get("jinja_import_caching", True))
+
         indent_filter = jinja_env.filters.get("indent")
         jinja_env.tests.update(JinjaTest.salt_jinja_tests)
         jinja_env.filters.update(JinjaFilter.salt_jinja_filters)
