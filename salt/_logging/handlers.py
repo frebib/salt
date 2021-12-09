@@ -216,6 +216,32 @@ class WatchedFileHandler(
     """
 
 
+class AuditFileHandler(WatchedFileHandler):
+    """
+    Setup file handler for audit log
+    """
+
+    def handleError(self, record):
+        """
+        Override parent method to prevent `record.msg` from being written to stdout/stderr.
+
+        See https://github.com/python/cpython/blob/3.8/Lib/logging/__init__.py#L991
+        """
+        if logging.raiseExceptions and sys.stderr:
+            t, v, tb = sys.exc_info()
+            try:
+                sys.stderr.write("--- Audit log error ---\n")
+                traceback.print_exception(t, v, tb, None, sys.stderr)
+                sys.stderr.write(
+                    "Error while logging from file %s, line %s\n"
+                    % (record.filename, record.lineno)
+                )
+            except OSError:
+                pass
+            finally:
+                del t, v, tb
+
+
 if sys.version_info < (3, 7):
     # On python versions lower than 3.7, we sill subclass and overwrite prepare to include the fix for:
     #  https://bugs.python.org/issue35726
