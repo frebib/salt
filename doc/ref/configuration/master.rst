@@ -4345,6 +4345,21 @@ Set this option to ``True`` to force a ``KeyError`` to be raised whenever an
 attempt to retrieve a named value from pillar fails. When this option is set
 to ``False``, the failed attempt returns an empty string.
 
+.. conf_master:: pillar_fail_hard
+
+``pillar_fail_hard``
+---------------------------
+
+.. versionadded:: 3005
+
+Default: ``False``
+
+Set this option to cause any rendering error during pillar rendering to cause
+immediate failure instead of attempting to render the rest of the pillar
+before returning the errors. This can be particularly useful when the pillar
+has a hierarchical dependency and one failure early on causes a cascade of
+failures later in the pillar rendering process. Default is 'False'.
+
 .. _git-pillar-config-opts:
 
 Git External Pillar (git_pillar) Configuration Options

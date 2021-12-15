@@ -932,6 +932,13 @@
 # to 'False', the failed attempt returns an empty string. Default is 'False'.
 #pillar_raise_on_missing: False
 
+# Set this option to cause any rendering error during pillar rendering to cause
+# immediate failure instead of attempting to render the rest of the pillar
+# before returning the errors. This can be particularly useful when the pillar
+# has a hierarchical dependency and one failure early on causes a cascade of
+# failures later in the pillar rendering process. Default is 'False'.
+#pillar_fail_hard: False
+
 # Git External Pillar (git_pillar) Configuration Options
 #
 # Specify the provider to be used for git_pillar. Must be either pygit2 or

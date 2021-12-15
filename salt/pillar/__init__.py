@@ -1045,6 +1045,7 @@ class Pillar:
         pillar = copy.copy(self.pillar_override)
         if errors is None:
             errors = []
+        failhard = self.opts.get("pillar_fail_hard", False)
         for saltenv, pstates in matches.items():
             pstatefiles = []
             mods = {}
@@ -1059,6 +1060,8 @@ class Pillar:
                             "'{}' found".format(saltenv)
                         ]
                     )
+                    if failhard and errors:
+                        return {}, errors
                 if matched_pstates:
                     pstatefiles.extend(matched_pstates)
                 else:
@@ -1069,6 +1072,8 @@ class Pillar:
 
                 if err:
                     errors += err
+                    if failhard:
+                        return {}, errors
 
                 if pstate is not None:
                     if not isinstance(pstate, dict):
@@ -1173,6 +1178,7 @@ class Pillar:
                 self.opts.get("pillar_merge_lists", False),
             )
 
+        failhard = self.opts.get("pillar_fail_hard", False)
         for run in self.opts["ext_pillar"]:
             if not isinstance(run, dict):
                 errors.append('The "ext_pillar" option is malformed')
@@ -1195,6 +1201,8 @@ class Pillar:
                             exc.__str__(),
                         )
                     )
+                    if failhard:
+                        return {}, errors
                     log.error(
                         "Exception caught loading ext_pillar '%s':\n%s",
                         key,
@@ -1215,34 +1223,50 @@ class Pillar:
         """
         Render the pillar data and return
         """
-        top, top_errors = self.get_top()
-        if ext:
-            if self.opts.get("ext_pillar_first", False):
-                self.opts["pillar"], errors = self.ext_pillar(self.pillar_override)
-                self.rend = salt.loader.render(self.opts, self.functions)
-                matches = self.top_matches(top, reload=True)
-                pillar, errors = self.render_pillar(matches, errors=errors)
-                pillar = merge(
-                    self.opts["pillar"],
-                    pillar,
-                    self.merge_strategy,
-                    self.opts.get("renderer", "yaml"),
-                    self.opts.get("pillar_merge_lists", False),
-                )
+        failhard = self.opts.get("pillar_fail_hard", False)
+
+        def _pillar():
+            top, top_errors = self.get_top()
+            if failhard and top_errors:
+                return {}, top_errors
+            if ext:
+                if self.opts.get("ext_pillar_first", False):
+                    self.opts["pillar"], errors = self.ext_pillar(self.pillar_override)
+                    if failhard and errors:
+                        return {}, errors
+                    self.rend = salt.loader.render(self.opts, self.functions)
+                    matches = self.top_matches(top, reload=True)
+                    pillar, errors = self.render_pillar(matches, errors=errors)
+                    pillar = merge(
+                        self.opts["pillar"],
+                        pillar,
+                        self.merge_strategy,
+                        self.opts.get("renderer", "yaml"),
+                        self.opts.get("pillar_merge_lists", False),
+                    )
+                else:
+                    matches = self.top_matches(top)
+                    pillar, errors = self.render_pillar(matches)
+                    if failhard and errors:
+                        return {}, errors
+                    pillar, errors = self.ext_pillar(pillar, errors=errors)
             else:
                 matches = self.top_matches(top)
                 pillar, errors = self.render_pillar(matches)
-                pillar, errors = self.ext_pillar(pillar, errors=errors)
-        else:
-            matches = self.top_matches(top)
-            pillar, errors = self.render_pillar(matches)
-        errors.extend(top_errors)
+            if failhard and errors:
+                return {}, errors
+            errors.extend(top_errors)
+            return pillar, errors
+
+        pillar, errors = _pillar()
+
         if self.opts.get("pillar_opts", False):
             mopts = dict(self.opts)
             if "grains" in mopts:
                 mopts.pop("grains")
             mopts["saltversion"] = __version__
             pillar["master"] = mopts
+
         if "pillar" in self.opts and self.opts.get("ssh_merge_pillar", False):
             pillar = merge(
                 self.opts["pillar"],
@@ -1251,6 +1275,7 @@ class Pillar:
                 self.opts.get("renderer", "yaml"),
                 self.opts.get("pillar_merge_lists", False),
             )
+
         if errors:
             for error in errors:
                 log.critical("Pillar render error: %s", error)
@@ -1268,6 +1293,7 @@ class Pillar:
         decrypt_errors = self.decrypt_pillar(pillar)
         if decrypt_errors:
             pillar.setdefault("_errors", []).extend(decrypt_errors)
+
         return pillar
 
     def decrypt_pillar(self, pillar):
