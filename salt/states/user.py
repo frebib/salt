@@ -557,19 +557,26 @@ def present(
                 name,
             )
 
+    # Warn when both usergroup and gid are specified
+    if usergroup and gid is not None:
+        gid = None
+        msg = (
+            "Ignoring 'gid' as 'usergroup' was also specified. Drop 'gid' or create "
+            "the group separately with 'group.present' to get rid of this warning."
+        )
+        ret.setdefault("warnings", []).append(msg)
+
     # If usergroup was specified, we'll also be creating a new
     # group. We should report this change without setting the gid
     # variable.
     if usergroup and __salt__["file.group_to_gid"](name) != "":
-        changes_gid = name
-    else:
-        changes_gid = gid
+        gid = name
 
     try:
         changes = _changes(
             name,
             uid,
-            changes_gid,
+            gid,
             groups,
             present_optgroups,
             remove_groups,
