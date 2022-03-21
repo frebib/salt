@@ -1078,6 +1078,12 @@ class RemoteClient(Client):
         else:
             self.auth = ""
 
+        # Request cache is a mapping of file->metadata, e.g. {"top.sls": {"hsum": "ababab", "mode":0o755}}
+        if self.opts["file_client_cache"]:
+            self.request_cache = {}
+        else:
+            self.request_cache = None
+
     def _refresh_channel(self):
         """
         Reset the channel, in the event of an interruption
@@ -1106,6 +1112,19 @@ class RemoteClient(Client):
             pass
         if channel is not None:
             channel.close()
+
+    def _get_cache(self, path, saltenv):
+        if self.request_cache is None:
+            return None
+
+        return self.request_cache.get(saltenv, {}).get(path)
+
+    def _update_cache(self, path, saltenv, load):
+        if self.request_cache is None:
+            return
+
+        cached = self.request_cache.setdefault(saltenv, {}).setdefault(path, {})
+        cached.update(load)
 
     def get_file(
         self, path, dest="", makedirs=False, saltenv="base", gzip=None, cachedir=None
@@ -1293,33 +1312,59 @@ class RemoteClient(Client):
         """
         List the files on the master
         """
+        cached = self._get_cache(prefix, saltenv)
+        if cached and "file_list" in cached:
+            return cached["file_list"]
+
         load = {"saltenv": saltenv, "prefix": prefix, "cmd": "_file_list"}
-        return self.channel.send(load)
+        ret = self.channel.send(load)
+        self._update_cache(prefix, saltenv, {"file_list": ret})
+        return ret
 
     def file_list_emptydirs(self, saltenv="base", prefix=""):
         """
         List the empty dirs on the master
         """
+        cached = self._get_cache(prefix, saltenv)
+        if cached and "file_list_emptydirs" in cached:
+            return cached["file_list_emptydirs"]
+
         load = {"saltenv": saltenv, "prefix": prefix, "cmd": "_file_list_emptydirs"}
-        return self.channel.send(load)
+        ret = self.channel.send(load)
+        self._update_cache(prefix, saltenv, {"file_list_emptydirs": ret})
+        return ret
 
     def dir_list(self, saltenv="base", prefix=""):
         """
         List the dirs on the master
         """
-        load = {"saltenv": saltenv, "prefix": prefix, "cmd": "_dir_list"}
-        return self.channel.send(load)
+        cached = self._get_cache(prefix, saltenv)
+        if cached and "dir_list" in cached:
+            return cached["dir_list"]
+
+        load = {"saltenv": saltenv, "prefix": prefix, "cmd": "dir_list"}
+        ret = self.channel.send(load)
+        self._update_cache(prefix, saltenv, {"dir_list": ret})
+        return ret
 
     def symlink_list(self, saltenv="base", prefix=""):
         """
         List symlinked files and dirs on the master
         """
-        load = {"saltenv": saltenv, "prefix": prefix, "cmd": "_symlink_list"}
-        return self.channel.send(load)
+        cached = self._get_cache(prefix, saltenv)
+        if cached and "symlink_list" in cached:
+            return cached["symlink_list"]
 
-    def __hash_and_stat_file(self, path, saltenv="base"):
+        load = {"saltenv": saltenv, "prefix": prefix, "cmd": "symlink_list"}
+        ret = self.channel.send(load)
+        self._update_cache(prefix, saltenv, {"symlink_list": ret})
+        return ret
+
+    def hash_file(self, path, saltenv="base"):
         """
-        Common code for hashing and stating files
+        Return the hash of a file, to get the hash of a file on the salt
+        master file server prepend the path with salt://<file on server>
+        otherwise, prepend the file with / for a local file.
         """
         try:
             path = self._check_proto(path)
@@ -1335,16 +1380,16 @@ class RemoteClient(Client):
                 ret["hsum"] = salt.utils.hashutils.get_hash(path, form=hash_type)
                 ret["hash_type"] = hash_type
                 return ret
-        load = {"path": path, "saltenv": saltenv, "cmd": "_file_hash"}
-        return self.channel.send(load)
 
-    def hash_file(self, path, saltenv="base"):
-        """
-        Return the hash of a file, to get the hash of a file on the salt
-        master file server prepend the path with salt://<file on server>
-        otherwise, prepend the file with / for a local file.
-        """
-        return self.__hash_and_stat_file(path, saltenv)
+        cached = self._get_cache(path, saltenv)
+        if cached and "hash_type" in cached and "hsum" in cached:
+            log.profile("Re-using cached file_hash for '%s' in saltenv '%s'", path, saltenv)
+            return {"hash_type": cached["hash_type"], "hsum": cached["hsum"]}
+
+        load = {"path": path, "saltenv": saltenv, "cmd": "_file_hash"}
+        ret = self.channel.send(load)
+        self._update_cache(path, saltenv, ret)
+        return ret
 
     def hash_and_stat_file(self, path, saltenv="base"):
         """
@@ -1362,10 +1407,17 @@ class RemoteClient(Client):
                     return hash_result, list(os.stat(path))
                 except Exception:  # pylint: disable=broad-except
                     return hash_result, None
+
+        cached = self._get_cache(path, saltenv)
+        if cached and "stat" in cached:
+            log.profile("Re-using cached stat_file for '%s' in saltenv '%s'", path, saltenv)
+            return hash_result, cached["stat"]
+
         load = {"path": path, "saltenv": saltenv, "cmd": "_file_find"}
         fnd = self.channel.send(load)
         try:
             stat_result = fnd.get("stat")
+            self._update_cache(path, saltenv, {"stat": stat_result})
         except AttributeError:
             stat_result = None
         return hash_result, stat_result
@@ -1374,8 +1426,16 @@ class RemoteClient(Client):
         """
         Return a list of the files in the file server's specified environment
         """
+        # This is identical to `self.file_list(prefix="", saltenv=saltenv)`
+        # except we don't send `prefix` in the load, so they share the cache
+        cached = self._get_cache("", saltenv)
+        if cached and "file_list" in cached:
+            return cached["file_list"]
+
         load = {"saltenv": saltenv, "cmd": "_file_list"}
-        return self.channel.send(load)
+        ret = self.channel.send(load)
+        self._update_cache("", saltenv, {"file_list": ret})
+        return ret
 
     def envs(self):
         """
@@ -1412,6 +1472,8 @@ class FSClient(RemoteClient):
         self._closing = False
         self.channel = salt.fileserver.FSChan(opts)
         self.auth = DumbAuth()
+        # Disable caching, always serve from the local fs to save memory
+        self.request_cache = None
 
 
 # Provide backward compatibility for anyone directly using LocalClient (but no

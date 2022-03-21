@@ -237,6 +237,8 @@ VALID_OPTS = immutabletypes.freeze(
         "top_file": str,
         # Location of the files a minion should look for. Set to 'local' to never ask the master.
         "file_client": str,
+        # Cache responses in the file_client from the master
+        "file_client_cache": bool,
         "local": bool,
         # When using a local file_client, this parameter is used to allow the client to connect to
         # a master for remote execution.
@@ -1033,6 +1035,7 @@ DEFAULT_MINION_OPTS = immutabletypes.freeze(
         "thorium_interval": 0.5,
         "thorium_roots": {"base": [salt.syspaths.BASE_THORIUM_ROOTS_DIR]},
         "file_client": "remote",
+        "file_client_cache": True,
         "local": False,
         "use_master_when_local": False,
         "file_roots": {
@@ -1305,6 +1308,7 @@ DEFAULT_MASTER_OPTS = immutabletypes.freeze(
         "pillarenv": None,
         "default_top": "base",
         "file_client": "local",
+        "file_client_cache": True,
         "local": True,
         # Update intervals
         "roots_update_interval": DEFAULT_INTERVAL,
