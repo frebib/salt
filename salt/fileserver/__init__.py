@@ -629,6 +629,81 @@ class Fileserver:
             return self.servers[fstr](load, fnd)
         return ret
 
+    def serve_files(self, load):
+        """
+        """
+        ret = {"files": {}}
+        if "paths" not in load or "saltenv" not in load:
+            return ret
+
+        for path, value in load["paths"].items():
+            saltenv = value.get("saltenv", load["saltenv"])
+            fnd = self.find_file(path, saltenv)
+            if not fnd.get("back"):
+                ret["files"][path] = False
+                continue
+
+            # If caller requests no content, honour it
+            send_content = value.get("nocontent", True)
+            file_ret = {}
+
+            # Client sent a hash; if it matches, we can skip sending file contents
+            if "hsum" in value:
+                fstr = "{}.file_hash".format(fnd["back"])
+                if fstr not in self.servers:
+                    ret["files"][path] = False
+                    continue
+
+                hash_load = {"path": path, "saltenv": load["saltenv"]}
+                if "hash_type" in value:
+                    hash_load["hash_type"] = value["hash_type"]
+
+                fhash = self.servers[fstr](hash_load, fnd)
+                if fhash.get("hsum") != value["hsum"]:
+                    file_ret.update(fhash)
+                else:
+                    # We can skip sending content if the hash matches
+                    send_content = False
+
+            # Tell the client of the updated file mode if it differs
+            if "stat" in value and "stat" in fnd:
+                if value.get("stat")[0] != fnd["stat"][0]:
+                    # Send an updated stat if the file mode differs
+                    file_ret.update({"stat": fnd["stat"]})
+
+            fstr = "{}.serve_file".format(fnd["back"])
+            if fstr not in self.servers:
+                ret["files"][path] = False
+                continue
+
+            # Send an updated file contents
+            if send_content:
+                serve_load = {
+                    "path": path,
+                    "saltenv": saltenv,
+                    "loc": value.get("loc", 0),
+                }
+
+                # TODO: Refactor Fileserver to handle multiple compression types
+                compress = load.get("compress")
+                if isinstance(compress, tuple):
+                    serve_load[compress[0]] = compress[1]
+                elif compress == "gzip" or compress is True:
+                    # Default to a middle-ground between speed/size
+                    serve_load["gzip"] = 5
+                else:
+                    gzip = load.get("gzip", None)
+                    if gzip:
+                        serve_load["gzip"] = gzip
+
+                data = self.servers[fstr](serve_load, fnd)
+                file_ret.update(data)
+
+            # Return True if everything is correct as the client reported
+            ret["files"][path] = True if not file_ret else file_ret
+
+        return ret
+
     def __file_hash_and_stat(self, load):
         """
         Common code for hashing and stating files

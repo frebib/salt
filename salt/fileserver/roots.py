@@ -232,7 +232,8 @@ def file_hash(load, fnd):
         return ret
 
     # set the hash_type as it is determined by config-- so mechanism won't change that
-    ret["hash_type"] = __opts__["hash_type"]
+    hash_type = load.get("hash_type", __opts__["hash_type"])
+    ret["hash_type"] = hash_type
 
     # check if the hash is cached
     # cache file's contents should be "hash:mtime"
@@ -241,7 +242,7 @@ def file_hash(load, fnd):
         "roots",
         "hash",
         saltenv,
-        "{}.hash.{}".format(fnd["rel"], __opts__["hash_type"]),
+        "{}.hash.{}".format(fnd["rel"], hash_type),
     )
     # if we have a cache, serve that if the mtime hasn't changed
     if os.path.exists(cache_path):
@@ -276,7 +277,7 @@ def file_hash(load, fnd):
             return file_hash(load, fnd)
 
     # if we don't have a cache entry-- lets make one
-    ret["hsum"] = salt.utils.hashutils.get_hash(path, __opts__["hash_type"])
+    ret["hsum"] = salt.utils.hashutils.get_hash(path, hash_type)
     cache_dir = os.path.dirname(cache_path)
     # make cache directory if it doesn't exist
     if not os.path.exists(cache_dir):

@@ -1159,6 +1159,7 @@ class AESFuncs(TransportMethods):
         "minion_publish",
         "revoke_auth",
         "_serve_file",
+        "_serve_files",
         "_file_find",
         "_file_hash",
         "_file_hash_and_stat",
@@ -1202,6 +1203,7 @@ class AESFuncs(TransportMethods):
 
         self.fs_ = salt.fileserver.Fileserver(self.opts)
         self._serve_file = self.fs_.serve_file
+        self._serve_files = self.fs_.serve_files
         self._file_find = self.fs_._find_file
         self._file_hash = self.fs_.file_hash
         self._file_hash_and_stat = self.fs_.file_hash_and_stat

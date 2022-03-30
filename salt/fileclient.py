@@ -164,6 +164,19 @@ class Client:
         """
         raise NotImplementedError
 
+    def get_files(
+        self,
+        paths,
+        saltenv="base",
+        compress=True,
+        cachedir=None,
+    ):
+        """
+        Copies files from the local files or master depending on
+        implementation
+        """
+        raise NotImplementedError
+
     def file_list_emptydirs(self, saltenv="base", prefix=""):
         """
         List the empty dirs
@@ -177,15 +190,8 @@ class Client:
         Pull a file down from the file server and store it in the minion
         file cache
         """
-        return self.get_url(
-            path,
-            "",
-            True,
-            saltenv,
-            cachedir=cachedir,
-            source_hash=source_hash,
-            verify_ssl=verify_ssl,
-        )
+        paths = {path: {"source_hash": source_hash, "verify_ssl": verify_ssl}}
+        return self.get_urls(paths, saltenv=saltenv, cachedir=cachedir)[path]
 
     def cache_files(self, paths, saltenv="base", cachedir=None):
         """
@@ -195,20 +201,14 @@ class Client:
         ret = []
         if isinstance(paths, str):
             paths = paths.split(",")
-        for path in paths:
-            ret.append(self.cache_file(path, saltenv, cachedir=cachedir))
-        return ret
+        return list(self.get_urls(paths, saltenv, cachedir=cachedir).values())
 
     def cache_master(self, saltenv="base", cachedir=None):
         """
         Download and cache all files on a master in a specified environment
         """
-        ret = []
-        for path in self.file_list(saltenv):
-            ret.append(
-                self.cache_file(salt.utils.url.create(path), saltenv, cachedir=cachedir)
-            )
-        return ret
+        files = list(map(salt.utils.url.create, self.file_list(saltenv)))
+        return list(self.get_urls(files, saltenv, cachedir=cachedir).values())
 
     def cache_dir(
         self,
@@ -222,8 +222,6 @@ class Client:
         """
         Download all of the files in a subdir of the master
         """
-        ret = []
-
         path = self._check_proto(salt.utils.data.decode(path))
         # We want to make sure files start with this *directory*, use
         # '/' explicitly because the master (that's generating the
@@ -234,17 +232,16 @@ class Client:
         log.info("Caching directory '%s' for environment '%s'", path, saltenv)
         # go through the list of all files finding ones that are in
         # the target directory and caching them
+        paths = []
         for fn_ in self.file_list(saltenv):
             fn_ = salt.utils.data.decode(fn_)
             if fn_.strip() and fn_.startswith(path):
                 if salt.utils.stringutils.check_include_exclude(
                     fn_, include_pat, exclude_pat
                 ):
-                    fn_ = self.cache_file(
-                        salt.utils.url.create(fn_), saltenv, cachedir=cachedir
-                    )
-                    if fn_:
-                        ret.append(fn_)
+                    paths.append(fn_)
+
+        ret = self.cache_files(paths, saltenv, cachedir=cachedir)
 
         if include_empty:
             # Break up the path into a list containing the bottom-level
@@ -412,6 +409,9 @@ class Client:
         else:
             prefix = separated[0]
 
+        paths = {}
+        dests = {} if dest else None
+
         # Copy files from master
         for fn_ in self.file_list(saltenv, prefix=path):
             # Prevent files in "salt://foobar/" (or salt://foo.sh) from
@@ -421,18 +421,29 @@ class Client:
                     continue
             except IndexError:
                 continue
-            # Remove the leading directories from path to derive
-            # the relative path on the minion.
-            minion_relpath = fn_[len(prefix) :].lstrip("/")
-            ret.append(
-                self.get_file(
-                    salt.utils.url.create(fn_),
-                    "{}/{}".format(dest, minion_relpath),
-                    True,
-                    saltenv,
-                    gzip,
-                )
-            )
+
+            url = salt.utils.url.create(fn_)
+            paths[url] = {}
+
+            if dest:
+                # Remove the leading directories from path to derive
+                # the relative path on the minion.
+                minion_relpath = fn_[len(prefix) :].lstrip("/")
+                paths[url]["dest"] = "{}/{}".format(dest, minion_relpath)
+
+        if gzip:
+            compress = ("gzip", gzip)
+        else:
+            compress = None
+
+        files = self.get_files(
+            paths,
+            saltenv=saltenv,
+            compress=compress,
+            cachedir=cachedir,
+        )
+        ret = files.values()
+
         # Replicate empty dirs from master
         try:
             for fn_ in self.file_list_emptydirs(saltenv, prefix=path):
@@ -469,7 +480,11 @@ class Client:
         """
         Get a single file from a URL.
         """
-        url_data = urllib.parse.urlparse(url)
+        url_data = (
+            url
+            if isinstance(url, urllib.parse.ParseResult)
+            else urllib.parse.urlparse(url)
+        )
         url_scheme = url_data.scheme
         url_path = os.path.join(url_data.netloc, url_data.path).rstrip(os.sep)
 
@@ -753,7 +768,7 @@ class Client:
                 password=url_data.password,
                 opts=self.opts,
                 verify_ssl=verify_ssl,
-                **get_kwargs
+                **get_kwargs,
             )
             if "handle" not in query:
                 raise MinionError(
@@ -773,7 +788,7 @@ class Client:
                 "HTTP error {0} reading {1}: {3}".format(
                     exc.code,
                     url,
-                    *http.server.BaseHTTPRequestHandler.responses[exc.code]
+                    *http.server.BaseHTTPRequestHandler.responses[exc.code],
                 )
             )
         except urllib.error.URLError as exc:
@@ -781,6 +796,51 @@ class Client:
         finally:
             if destfp is not None:
                 destfp.close()
+
+    def get_urls(
+        self,
+        urls,
+        makedirs=False,
+        saltenv="base",
+        no_cache=False,
+        cachedir=None,
+    ):
+        """
+        Gets one or more files from a URL or the salt master.
+        """
+        salt_urls = {}
+        rem_urls = {}
+
+        # Split files into two sets: 'salt://' and everything else
+        for url in urls:
+            url_data = (
+                url
+                if isinstance(url, urllib.parse.ParseResult)
+                else urllib.parse.urlparse(url)
+            )
+
+            # urls can be a dict to pass url-specific options
+            dest = salt_urls if url_data.scheme == "salt" else rem_urls
+            if isinstance(urls, dict):
+                dest[url] = urls[url]
+            else:
+                dest[url] = {}
+
+        # FIXME: Perform multiple file fetches async
+        ret = self.get_files(salt_urls, saltenv=saltenv, cachedir=cachedir)
+
+        for url, data in rem_urls.items():
+            ret[url] = self.get_url(
+                url,
+                data.pop("dest", None),
+                makedirs=makedirs,
+                saltenv=saltenv,
+                no_cache=no_cache,
+                cachedir=cachedir,
+                **data,
+            )
+
+        return ret
 
     def get_template(
         self,
@@ -902,6 +962,19 @@ class PillarClient(Client):
             return ""
 
         return fnd_path
+
+    def get_files(self, paths, saltenv="base", compress=None, cachedir=None):
+        """
+        Copies a file from the local files directory into :param:`dest`
+        gzip compression settings are ignored for local files
+        """
+        ret = {}
+        for full_path in paths:
+            path = self._check_proto(full_path)
+            fnd = self._find_file(path, saltenv)
+            ret[full_path] = fnd.get("path")
+
+        return ret
 
     def file_list(self, saltenv="base", prefix=""):
         """
@@ -1078,7 +1151,7 @@ class RemoteClient(Client):
         else:
             self.auth = ""
 
-        # Request cache is a mapping of file->metadata, e.g. {"top.sls": {"hsum": "ababab", "mode":0o755}}
+        # Request cache is a mapping of file->metadata, e.g. {"top.sls": {"hsum": "ababab", "stat":{..}}}
         if self.opts["file_client_cache"]:
             self.request_cache = {}
         else:
@@ -1123,6 +1196,12 @@ class RemoteClient(Client):
         if self.request_cache is None:
             return
 
+        log.trace(
+            "Updating fileclient cache for '%s' in saltenv '%s' with %s",
+            path,
+            saltenv,
+            load,
+        )
         cached = self.request_cache.setdefault(saltenv, {}).setdefault(path, {})
         cached.update(load)
 
@@ -1308,6 +1387,196 @@ class RemoteClient(Client):
 
         return dest
 
+    def get_files(
+        self,
+        paths,
+        saltenv="base",
+        compress=True,
+        cachedir=None,
+    ):
+        """
+        Get files from the salt-master if they're not already cached. Paths
+        must be a salt server location, aka, salt://path/to/file, if dest is
+        omitted, then the downloaded file will be placed in the minion cache
+        """
+        ret = {}
+        rel_paths = {}  # Mapping from path/to.sls -> salt://path/to.sls?saltenv=blah
+        cache_paths = {}  # Mapping from path/to.sls -> /var/cache/salt/..
+
+        load = {
+            "paths": {},
+            "saltenv": saltenv,
+            "compress": compress,
+            "cmd": "_serve_files",
+        }
+
+        # Populate the load with what we already know about local files
+        for full_path in paths:
+            path, senv = salt.utils.url.split_env(full_path)
+            path = self._check_proto(path)
+            file_saltenv = senv or saltenv
+            file_opts = paths[full_path] if isinstance(paths, dict) else None
+
+            if file_opts and "dest" in file_opts:
+                dest = file_opts.pop("dest")
+            else:
+                with self._cache_loc(
+                    path, file_saltenv, cachedir=cachedir
+                ) as cache_dest:
+                    dest = cache_dest
+
+            rel_paths[path] = full_path
+            cache_paths[path] = dest
+
+            # Tell the master that we have the file with this hash so it
+            # can avoid sending it to us if we already have it cached.
+            file_req = {}
+
+            # Tell the master what the current file hash/mode is so it can
+            # decide whether to send back updated content/mode
+            if os.path.isfile(dest):
+                file_req["stat"] = list(os.stat(dest))
+                hash_local = self.hash_file(dest, saltenv)
+                # There's no reason this should be falsy
+                if hash_local:
+                    file_req.update(hash_local)
+
+                # Don't send requests for files that we already know are up-to-date
+                if {"stat", "hsum", "hash_type"} <= set(file_req):
+                    cached = self._get_cache(path, file_saltenv)
+                    if (
+                        cached
+                        and {"stat", "hsum", "hash_type"} <= set(cached)
+                        and file_req["stat"][0] == cached["stat"][0]
+                        and file_req["hsum"] == cached["hsum"]
+                        and cached["hash_type"] == cached["hash_type"]
+                    ):
+                        log.debug(
+                            "Skipping file request for '%s' in saltenv '%s' as cached file is up-to-date",
+                            path,
+                            file_saltenv,
+                        )
+
+                        # Make sure we report the already-cached file
+                        ret[full_path] = dest
+
+                        continue
+
+            # Non-default saltenv; request it explicitly
+            if file_saltenv != saltenv:
+                file_req["saltenv"] = file_saltenv
+
+            if file_opts and "compress" in file_opts:
+                file_req["compress"] = file_opts.pop("compress")
+
+            load["paths"][path] = file_req
+
+        data = self.channel.send(load, raw=True)
+        # Sometimes the source is local (e.g. with 'salt.fileserver.FSChan'),
+        # in which case the keys are already strings. Sometimes the source is
+        # remote, in which case the keys are bytes due to raw mode. Standardise
+        # on strings for the top-level keys to simplify things.
+        data = decode_dict_keys_to_str(data)
+
+        if not isinstance(ret, dict) or "files" not in data:
+            raise TypeError("Invalid return for get_files() call from master")
+
+        data["files"] = decode_dict_keys_to_str(data["files"])
+
+        # TODO: Add error handling for unexpected responses here
+        # TODO: Process files that we didn't send in the load but were requested
+        for path, value in data["files"].items():
+            if path not in rel_paths:
+                log.warning("Master returned file '%s' that we didn't request", path)
+                continue
+
+            full_path = rel_paths[path]
+            if not value:
+                log.warning(
+                    "Could not find file '%s' in saltenv '%s'", full_path, saltenv
+                )
+                ret[full_path] = False
+                continue
+
+            value = decode_dict_keys_to_str(value)
+
+            dest = cache_paths[path]
+            file_req = load["paths"][path]
+            file_saltenv = file_req.get("saltenv", saltenv)
+            ret[full_path] = dest
+
+            if value is True:
+                # Cached file is already up-to-date
+                log.trace("Cached file '%s' in saltenv '%s' is already up-to-date", path, file_saltenv)
+
+                # Update server-reported hash in case we don't already have it
+                self._update_cache(
+                    path,
+                    file_saltenv,
+                    {
+                        "stat": file_req["stat"],
+                        "hsum": file_req["hsum"],
+                        "hash_type": file_req["hash_type"],
+                    },
+                )
+
+                # TODO: Implement cache->dest file copying in get_file()
+                continue
+
+            # value can contain
+            # - `data` file content
+            # - `stat` file stat
+            # - `hsum` content hash (with `hash_type`)
+            if isinstance(value, dict):
+                # Server sent new file contents
+                if "data" in value:
+                    # TODO: Implement more (de)compression modes
+                    if value.get("compress") == "gzip" or value.get("gzip"):
+                        content = salt.utils.gzip_util.uncompress(value["data"])
+                    else:
+                        content = value["data"]
+                    if isinstance(content, str):
+                        content = content.encode()
+
+                    # If a directory was formerly cached at this path, then
+                    # remove it to avoid a traceback trying to write the file
+                    if os.path.isdir(dest):
+                        salt.utils.files.rm_rf(dest)
+
+                    # Write out the updated file to cache
+                    with salt.utils.files.fopen(dest, "wb+") as fh:
+                        fh.write(content)
+
+                    # If we sent a file stat in the request, it means the file already existed
+                    verb = "Updating" if "stat" in file_req else "Caching"
+                    log.info(
+                        "%s file from saltenv '%s', ** done ** '%s'",
+                        verb,
+                        file_saltenv,
+                        path,
+                    )
+
+                if "stat" in value:
+                    mode = value["stat"][0]
+                    os.chmod(dest, mode)
+                    log.debug(
+                        "Updating file mode from saltenv '%s', ** done ** '%s' -> %s",
+                        file_saltenv,
+                        path,
+                        salt.utils.files.st_mode_to_octal(mode),
+                    )
+                    self._update_cache(path, file_saltenv, {"stat": value["stat"]})
+
+                if "hsum" in value and "hash_type" in value:
+                    self._update_cache(
+                        path,
+                        file_saltenv,
+                        {"hsum": value["hsum"], "hash_type": value["hash_type"]},
+                    )
+                    # TODO: Should we verify the hash of the written cache file?
+
+        return ret
+
     def file_list(self, saltenv="base", prefix=""):
         """
         List the files on the master
@@ -1383,7 +1652,9 @@ class RemoteClient(Client):
 
         cached = self._get_cache(path, saltenv)
         if cached and "hash_type" in cached and "hsum" in cached:
-            log.profile("Re-using cached file_hash for '%s' in saltenv '%s'", path, saltenv)
+            log.profile(
+                "Re-using cached file_hash for '%s' in saltenv '%s'", path, saltenv
+            )
             return {"hash_type": cached["hash_type"], "hsum": cached["hsum"]}
 
         load = {"path": path, "saltenv": saltenv, "cmd": "_file_hash"}
@@ -1410,7 +1681,9 @@ class RemoteClient(Client):
 
         cached = self._get_cache(path, saltenv)
         if cached and "stat" in cached:
-            log.profile("Re-using cached stat_file for '%s' in saltenv '%s'", path, saltenv)
+            log.profile(
+                "Re-using cached stat_file for '%s' in saltenv '%s'", path, saltenv
+            )
             return hash_result, cached["stat"]
 
         load = {"path": path, "saltenv": saltenv, "cmd": "_file_find"}
@@ -1430,6 +1703,7 @@ class RemoteClient(Client):
         # except we don't send `prefix` in the load, so they share the cache
         cached = self._get_cache("", saltenv)
         if cached and "file_list" in cached:
+            log.trace("Using cached file_list for saltenv '%s'", saltenv)
             return cached["file_list"]
 
         load = {"saltenv": saltenv, "cmd": "_file_list"}
