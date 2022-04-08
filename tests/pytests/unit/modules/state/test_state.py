@@ -769,12 +769,9 @@ def test_highstate():
     arg = "whitelist=sls1.sls"
     mock = MagicMock(side_effect=[True, False, False, False])
     with patch.object(state, "_disabled", mock):
-        assert state.highstate("whitelist=sls1.sls") == {
-            "comment": "Disabled",
-            "name": "Salt highstate run is disabled. "
-            "To re-enable, run state.enable highstate",
-            "result": "False",
-        }
+        assert state.highstate("whitelist=sls1.sls") == [
+            "Salt highstate run is disabled. To re-enable, run state.enable highstate"
+        ]
 
         mock = MagicMock(side_effect=["A", None, None])
         with patch.object(state, "running", mock):

@@ -1049,18 +1049,10 @@ def highstate(test=None, queue=False, **kwargs):
         salt '*' state.highstate pillar="{foo: 'Foo!', bar: 'Bar!'}"
     """
     if _disabled(["highstate"]):
-        log.debug(
-            "Salt highstate run is disabled. To re-enable, run state.enable highstate"
-        )
-        ret = {
-            "name": (
-                "Salt highstate run is disabled. To re-enable, run state.enable"
-                " highstate"
-            ),
-            "result": "False",
-            "comment": "Disabled",
-        }
-        return ret
+        __context__["retcode"] = salt.defaults.exitcodes.EX_STATE_FAILURE
+        msg = "Salt highstate run is disabled. To re-enable, run state.enable highstate"
+        log.error(msg)
+        return [msg]
 
     concurrent = kwargs.get("concurrent", False)
 
@@ -1296,7 +1288,7 @@ def sls(mods, test=None, exclude=None, queue=False, sync_mods=None, **kwargs):
 
     if disabled:
         for state in disabled:
-            log.debug(
+            log.error(
                 "Salt state %s is disabled. To re-enable, run state.enable %s",
                 state,
                 state,
