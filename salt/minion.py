@@ -1601,14 +1601,6 @@ class Minion(MinionBase):
         return functions, returners, errors, executors
 
     def _send_req_sync(self, load, timeout):
-        if self.opts["minion_sign_messages"]:
-            log.trace("Signing event to be published onto the bus.")
-            minion_privkey_path = os.path.join(self.opts["pki_dir"], "minion.pem")
-            sig = salt.crypt.sign_message(
-                minion_privkey_path, salt.serializers.msgpack.serialize(load)
-            )
-            load["sig"] = sig
-
         with salt.utils.event.get_event(
             "minion", opts=self.opts, listen=False
         ) as event:
@@ -1618,14 +1610,6 @@ class Minion(MinionBase):
 
     @salt.ext.tornado.gen.coroutine
     def _send_req_async(self, load, timeout):
-        if self.opts["minion_sign_messages"]:
-            log.trace("Signing event to be published onto the bus.")
-            minion_privkey_path = os.path.join(self.opts["pki_dir"], "minion.pem")
-            sig = salt.crypt.sign_message(
-                minion_privkey_path, salt.serializers.msgpack.serialize(load)
-            )
-            load["sig"] = sig
-
         with salt.utils.event.get_event(
             "minion", opts=self.opts, listen=False
         ) as event:

@@ -1676,46 +1676,12 @@ class AESFuncs(TransportMethods):
         """
         Handle the return data sent from the minions.
 
-        Takes the return, verifies it and fires it on the master event bus.
+        Verify minion return data and fire it on the master event bus.
         Typically, this event is consumed by the Salt CLI waiting on the other
         end of the event bus but could be heard by any listener on the bus.
 
         :param dict load: The minion payload
         """
-        if self.opts["require_minion_sign_messages"] and "sig" not in load:
-            log.critical(
-                "_return: Master is requiring minions to sign their "
-                "messages, but there is no signature in this payload from "
-                "%s.",
-                load["id"],
-            )
-            return False
-
-        if "sig" in load:
-            log.trace("Verifying signed event publish from minion")
-            sig = load.pop("sig")
-            this_minion_pubkey = os.path.join(
-                self.opts["pki_dir"], "minions/{}".format(load["id"])
-            )
-            serialized_load = salt.serializers.msgpack.serialize(load)
-            if not salt.crypt.verify_signature(
-                this_minion_pubkey, serialized_load, sig
-            ):
-                log.info("Failed to verify event signature from minion %s.", load["id"])
-                if self.opts["drop_messages_signature_fail"]:
-                    log.critical(
-                        "drop_messages_signature_fail is enabled, dropping "
-                        "message from %s",
-                        load["id"],
-                    )
-                    return False
-                else:
-                    log.info(
-                        "But 'drop_message_signature_fail' is disabled, so message is"
-                        " still accepted."
-                    )
-            load["sig"] = sig
-
         try:
             salt.utils.job.store_job(
                 self.opts, load, event=self.event, mminion=self.mminion

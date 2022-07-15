@@ -721,7 +721,6 @@ class ZeroMQSocketMonitor:
     def monitor_callback(self, msg):
         evt = zmq.utils.monitor.parse_monitor_message(msg)
         evt["description"] = self.event_map[evt["event"]]
-        log.debug("ZeroMQ event: %s", evt)
         if evt["event"] == zmq.EVENT_MONITOR_STOPPED:
             self.stop()
 

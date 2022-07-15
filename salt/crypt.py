@@ -258,6 +258,9 @@ def verify_signature(pubkey_path, message, signature):
     log.debug("salt.crypt.verify_signature: Loading public key")
     pubkey = get_rsa_pub_key(pubkey_path)
     log.debug("salt.crypt.verify_signature: Verifying signature")
+    if not signature:
+        log.error("Empty signature")
+        return False
     if HAS_M2:
         md = EVP.MessageDigest("sha1")
         md.update(salt.utils.stringutils.to_bytes(message))

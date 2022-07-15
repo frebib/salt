@@ -209,6 +209,63 @@ class AsyncReqChannel:
     def verify_signature(self, data, sig):
         return salt.crypt.verify_signature(self.master_pubkey_path, data, sig)
 
+    def _verify_private_signature(self, ret):
+        """
+        Patch MitM for pillar data on the minion side.
+        Based on `salt.transport.mixins.auth.AESPubClientMixin._verify_master_signature()`.
+        """
+        # Verify ret contents
+        has_sig = True if "sig" in ret else False
+        is_serial = True if "ser_ret" in ret else False
+
+        if not any([has_sig, is_serial]):
+            raise salt.crypt.AuthenticationError(
+                "Private message from master is unsigned"
+            )
+        elif not all([has_sig, is_serial]):
+            raise salt.crypt.AuthenticationError(
+                "Private message from master is incorrectly signed: has signature: {}, is serialized: {}".format(
+                    has_sig, is_serial
+                )
+            )
+
+        # Replace `ret` with deserialized `ser_ret`
+        sig = ret["sig"]
+        ser_ret = ret["ser_ret"]
+        ret = salt.payload.loads(ser_ret)
+
+        # Verify ret signature
+        master_pubkey_path = os.path.join(self.opts["pki_dir"], "minion_master.pub")
+        if not salt.crypt.verify_signature(master_pubkey_path, ser_ret, sig):
+            raise salt.crypt.AuthenticationError(
+                "Failed to verify private message signature from master"
+            )
+
+        log.trace("Successfully verified private message signature from master")
+        return ret
+
+    def _sign_minion_load(self, load):
+        """
+        Sign message load:
+        - Serialize load
+        - Sign serialized load
+        """
+        # Traditionally, only `cmd=_return` messages from the minion are signed
+        if (
+            isinstance(load, dict)
+            and load.get("cmd") == "_return"
+            and self.opts["minion_sign_messages"]
+        ):
+            log.trace("Signing message to be sent to the master")
+            minion_privkey_path = os.path.join(self.opts["pki_dir"], "minion.pem")
+            ser_load = salt.payload.dumps(load)
+            return {
+                "ser_load": ser_load,
+                "sig": salt.crypt.sign_message(minion_privkey_path, ser_load),
+            }
+
+        return load
+
     @salt.ext.tornado.gen.coroutine
     def _crypted_transfer(self, load, timeout=60, raw=False):
         """
@@ -226,6 +283,9 @@ class AsyncReqChannel:
         nonce = uuid.uuid4().hex
         if load and isinstance(load, dict):
             load["nonce"] = nonce
+
+        # Sign message if configured
+        load = self._sign_minion_load(load)
 
         @salt.ext.tornado.gen.coroutine
         def _do_transfer():

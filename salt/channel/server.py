@@ -126,6 +126,14 @@ class ReqServerChannel:
             )
             raise salt.ext.tornado.gen.Return("payload and load must be a dict")
 
+        # If the message is signed, verify it and deserialize the load
+        # before returning
+        try:
+            payload = self._verify_message_signature(payload)
+        except salt.exceptions.AuthenticationError as e:
+            log.exception(e)
+            raise salt.ext.tornado.gen.Return("bad load: invalid signature")
+
         try:
             id_ = payload["load"].get("id", "")
             if "\0" in id_:
@@ -144,6 +152,10 @@ class ReqServerChannel:
         sign_messages = False
         if version > 1:
             sign_messages = True
+        # Use Cloudflare 2019.2.x/3004 compatible signatures
+        sign_compat = False
+        if version == 0:
+            sign_compat = True
 
         # intercept the "_auth" commands, since the main daemon shouldn't know
         # anything about our key auth
@@ -156,7 +168,6 @@ class ReqServerChannel:
         if version > 1:
             nonce = payload["load"].pop("nonce", None)
 
-        # TODO: test
         try:
             # Take the payload_handler function that was registered when we created the channel
             # and call it, returning control to the caller until it completes
@@ -179,13 +190,16 @@ class ReqServerChannel:
                     req_opts["tgt"],
                     nonce,
                     sign_messages,
+                    sign_compat,
                 ),
             )
         log.error("Unknown req_fun %s", req_fun)
         # always attempt to return an error to the minion
         raise salt.ext.tornado.gen.Return("Server-side exception handling payload")
 
-    def _encrypt_private(self, ret, dictkey, target, nonce=None, sign_messages=True):
+    def _encrypt_private(
+        self, ret, dictkey, target, nonce=None, sign_messages=True, sign_compat=False
+    ):
         """
         The server equivalent of ReqChannel.crypted_transfer_decode_dictentry
         """
@@ -223,6 +237,20 @@ class ReqServerChannel:
             pret[dictkey] = pcrypt.dumps(signed_msg)
         else:
             pret[dictkey] = pcrypt.dumps(ret)
+
+        if sign_compat:
+            log.trace(
+                "Signing private message to {} in Cloudflare compatible form".format(
+                    target
+                )
+            )
+            master_pem_path = os.path.join(self.opts["pki_dir"], "master.pem")
+            ser_ret = salt.payload.dumps(pret)
+            return {
+                "ser_ret": ser_ret,
+                "sig": salt.crypt.sign_message(master_pem_path, ser_ret),
+            }
+
         return pret
 
     def _clear_signed(self, load):
@@ -260,6 +288,79 @@ class ReqServerChannel:
                 if not self._update_aes():
                     raise
                 payload["load"] = self.crypticle.loads(payload["load"])
+        return payload
+
+    def _verify_message_signature(self, payload):
+        """
+        Verify signature of minion return data if provided.
+        """
+        # The total behavior space of this function must cover the cartesian
+        # product: {(un)signed loads}(x){signature required, drop on invalid
+        # signature}(x){payload.load.cmd}
+
+        # Do not attempt to verify `_auth` messages
+        if payload["enc"] == "clear" and payload.get("load", {}).get("cmd") == "_auth":
+            return payload
+
+        # Verify load contents
+        has_sig = True if "sig" in payload.get("load", {}) else False
+        is_serial = True if "ser_load" in payload.get("load", {}) else False
+
+        # Extract signature and serialized load
+        if all([has_sig, is_serial]):
+            sig = payload["load"]["sig"]
+            ser_load = payload["load"]["ser_load"]
+            # Replace `load` with deserialized `ser_load`
+            payload["load"] = salt.payload.loads(ser_load)
+
+        # Only minion messages with `cmd=_return` should be signed, so only
+        # require signatures on those messages
+        is_return = True if payload.get("load").get("cmd") == "_return" else False
+
+        # Make decisions about what to do when message isn't signed
+        if not any([has_sig, is_serial]):
+            unsigned_msg = "Message from {} is unsigned".format(
+                payload["load"].get("id", "unknown")
+            )
+            if is_return and self.opts["require_minion_sign_messages"]:
+                raise salt.crypt.AuthenticationError(unsigned_msg)
+            else:
+                log.trace(unsigned_msg)
+                return payload
+        elif not all([has_sig, is_serial]):
+            incorrect_msg = (
+                "Message from {} is incorrectly signed: "
+                "has signature: {}, is serialized: {}"
+                "".format(
+                    payload.get("load", {}).get("id", "unknown"), has_sig, is_serial
+                )
+            )
+            if is_return and self.opts["require_minion_sign_messages"]:
+                raise salt.crypt.AuthenticationError(incorrect_msg)
+            else:
+                log.warning(incorrect_msg)
+                return payload
+
+        # Verify load signature
+        this_minion_pubkey = os.path.join(
+            self.opts["pki_dir"], "minions/{}".format(payload["load"]["id"])
+        )
+        if salt.crypt.verify_signature(this_minion_pubkey, ser_load, sig):
+            log.trace(
+                "Successfully verified message signature from minion %s",
+                payload["load"]["id"],
+            )
+        else:
+            verify_fail_msg = (
+                "Failed to verify message signature from minion {}".format(
+                    payload["load"]["id"]
+                )
+            )
+            if self.opts["drop_messages_signature_fail"]:
+                raise salt.crypt.AuthenticationError(verify_fail_msg)
+            else:
+                log.warning(verify_fail_msg)
+
         return payload
 
     def _auth(self, load, sign_messages=False):
