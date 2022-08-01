@@ -28798,11 +28798,10 @@ strings or file\-like objects as input. For example:
 .nf
 .ft C
 import mycoolmodule
-from salt.ext import six
 
 
 def render(data, saltenv="base", sls="", **kwargs):
-    if not isinstance(data, six.string_types):
+    if not isinstance(data, str):
         # Read from file\-like object
         data = data.read()
 
@@ -28850,11 +28849,10 @@ Here is a simple YAML renderer example:
 .ft C
 import salt.utils.yaml
 from salt.utils.yamlloader import SaltYamlSafeLoader
-from salt.ext import six
 
 
 def render(yaml_data, saltenv="", sls="", **kws):
-    if not isinstance(yaml_data, six.string_types):
+    if not isinstance(yaml_data, str):
         yaml_data = yaml_data.read()
     data = salt.utils.yaml.safe_load(yaml_data)
     return data if data else {}
@@ -34669,14 +34667,13 @@ As an example, let\(aqs modify the \fBlist\fP matcher to have the separator be a
 .nf
 .ft C
 from __future__ import absolute_import, print_function, unicode_literals
-from salt.ext import six  # pylint: disable=3rd\-party\-module\-not\-gated
 
 
 def match(self, tgt):
     """
     Determines if this host is on the list
     """
-    if isinstance(tgt, six.string_types):
+    if isinstance(tgt, str):
         # The stock matcher splits on \(ga,\(ga.  Change to \(ga/\(ga below.
         tgt = tgt.split("/")
     return bool(self.opts["id"] in tgt)

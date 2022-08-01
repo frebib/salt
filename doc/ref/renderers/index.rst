@@ -182,11 +182,10 @@ strings or file-like objects as input. For example:
 .. code-block:: python
 
     import mycoolmodule
-    from salt.ext import six
 
 
     def render(data, saltenv="base", sls="", **kwargs):
-        if not isinstance(data, six.string_types):
+        if not isinstance(data, str):
             # Read from file-like object
             data = data.read()
 
@@ -225,11 +224,10 @@ Here is a simple YAML renderer example:
 
     import salt.utils.yaml
     from salt.utils.yamlloader import SaltYamlSafeLoader
-    from salt.ext import six
 
 
     def render(yaml_data, saltenv="", sls="", **kws):
-        if not isinstance(yaml_data, six.string_types):
+        if not isinstance(yaml_data, str):
             yaml_data = yaml_data.read()
         data = salt.utils.yaml.safe_load(yaml_data)
         return data if data else {}
