@@ -62,6 +62,7 @@ def _deferred_write_on_flush_proc_target():
         assert stds.stderr == "Foo\nBar\n"
 
 
+@pytest.mark.skip(reason="https://github.com/saltstack/salt/issues/61957")
 def test_sync_with_handlers():
     proc = multiprocessing.Process(target=_sync_with_handlers_proc_target)
     proc.start()
@@ -69,6 +70,7 @@ def test_sync_with_handlers():
     assert proc.exitcode == 0
 
 
+@pytest.mark.skip(reason="https://github.com/saltstack/salt/issues/61957")
 def test_deferred_write_on_flush():
     proc = multiprocessing.Process(target=_deferred_write_on_flush_proc_target)
     proc.start()
