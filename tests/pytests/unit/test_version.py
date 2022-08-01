@@ -24,6 +24,7 @@ STRIP_INITIAL_NON_NUMBERS_REGEX = re.compile(r"(?:[^\d]+)?(?P<vs>.*)")
 def clear_environ():
     os.environ.pop("SALT_CF_VERSION", None)
     os.environ.pop("SALT_CF_RELEASE", None)
+    os.environ.pop("SALT_DEB_VERSION", None)
 
 
 @pytest.mark.parametrize(

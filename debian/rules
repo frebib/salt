@@ -1,0 +1,42 @@
+#!/usr/bin/make -f
+
+export DH_VERBOSE=1
+export DH_OPTIONS=-v
+
+# Tell Salt to write out salt/_version.py
+export WRITE_SALT_VERSION=1
+
+include /usr/share/python3/python.mk
+%:
+	dh $@ --buildsystem pybuild --with bash-completion,python3
+
+override_dh_auto_build:
+	dh_auto_build
+ifeq (,$(filter nodoc,$(DEB_BUILD_OPTIONS)))
+	HTML_THEME=saltstack make -C doc html SPHINXBUILD=/usr/share/sphinx/scripts/python3/sphinx-build SPHINXOPTS="-T -jauto"
+	HTML_THEME=saltstack make -C doc man SPHINXBUILD=/usr/share/sphinx/scripts/python3/sphinx-build SPHINXOPTS="-T -jauto"
+endif
+
+override_dh_auto_clean:
+	make -C doc clean
+	dh_auto_clean
+
+override_dh_auto_test:
+ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
+	LC_ALL=C.UTF-8 python3 -m pytest -ra tests/unit tests/pytests/functional tests/pytests/integration tests/pytests/unit
+endif
+
+override_dh_install:
+	dh_install -X/usr/share/man/man
+
+override_dh_compress:
+	dh_compress -X.ico
+
+override_dh_fixperms:
+	dh_fixperms
+	chmod -x debian/salt-common/usr/lib/python3/dist-packages/salt/templates/git/ssh-id-wrapper.bat
+	chmod 2750 debian/salt-common/var/log/salt
+	chown root:adm debian/salt-common/var/log/salt
+
+override_dh_missing:
+	dh_missing -X/usr/share/man/man -X/usr/bin/salt-syndic --list-missing

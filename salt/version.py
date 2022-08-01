@@ -2,6 +2,7 @@
 Set up the version of Salt
 """
 
+import os
 import operator
 import platform
 import re
@@ -477,6 +478,7 @@ class SaltStackVersion:
 
     @property
     def string(self):
+        deb_compat = bool(os.getenv("SALT_DEB_VERSION"))
         if self.new_version(self.major):
             version_string = "{}".format(self.major)
             if self.minor:
@@ -486,16 +488,20 @@ class SaltStackVersion:
         if self.mbugfix:
             version_string += ".{}".format(self.mbugfix)
         if self.pre_type:
+            if deb_compat:
+                version_string += "~"
             version_string += "{}{}".format(self.pre_type, self.pre_num)
         if self.noc and (self.cf or self.sha):
             if self.cf:
-                version_string += "-cf{}".format(self.noc)
+                version_string += ("+" if deb_compat else "-")
+                version_string += "cf{}".format(self.noc)
             else:
                 version_string += "+{}".format(self.noc if self.noc >= 0 else "0na")
 
             # sha can be `None` in cf release builds
             if self.sha:
-                version_string += ".{}".format(self.sha)
+                version_string += ("~" if deb_compat else ".")
+                version_string += self.sha
         return version_string
 
     @property

@@ -1,0 +1,11 @@
+/files
+/tmp/
+/salt-*/
+/debhelper-build-stamp
+/*.debhelper.log
+/*.postinst.debhelper
+/*.postrm.debhelper
+/*.preinst.debhelper
+/*.prerm.debhelper
+/*.substvars
+/.debhelper

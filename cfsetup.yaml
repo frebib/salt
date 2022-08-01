@@ -1,0 +1,52 @@
+default-flavor: bullseye
+
+all: &all
+  build:
+    build_dir: /cfsetup_build/salt
+    builddeps: &builddeps
+      - build-essential
+      - debhelper
+      - devscripts
+      - dh-python
+      - equivs
+      - python3-teamcity-messages
+    pre-cache-copy-paths: &pre-cache-copy-paths
+      - debian/control
+    pre-cache:
+      # We need a newer pytest, available in Bullseye backports
+      - echo deb https://deb.debian.org/debian bullseye-backports main contrib > /etc/apt/sources.list.d/backports.list
+      - 'printf "Package: python3-pytest\nPin: release a=*-backports\nPin-Priority: 500\n" > /etc/apt/preferences.d/backports'
+      - apt-get update
+      # Install Salt build-dependencies defined in debian/control
+      - mk-build-deps --remove --install --tool='apt-get --no-install-recommends --yes' debian/control
+      # dpkg-buildpackage writes packages to ../ so make it writeable
+      - chmod 777 ..
+    post-cache:
+      # Tests are run separately, not during the deb build
+      - export DEB_BUILD_OPTIONS=nocheck
+      - export SALT_CF_VERSION=1
+      # Update the version in debian/changelog so the package gets the right version
+      - dch --controlmaint --distribution=stable --newversion="$(SALT_DEB_VERSION=1 python3 salt/version.py)" "Package release"
+      - dpkg-buildpackage -b -uc -us
+    artifacts:
+      - ../salt*.deb
+
+  test:
+    # Testing is the same as building, except all we do is run pytest
+    build_dir: /cfsetup_build/salt
+    builddeps: *builddeps
+    pre-cache-copy-paths: *pre-cache-copy-paths
+    pre-cache:
+      - echo deb https://deb.debian.org/debian bullseye-backports main contrib > /etc/apt/sources.list.d/backports.list
+      - 'printf "Package: python3-pytest\nPin: release a=*-backports\nPin-Priority: 500\n" > /etc/apt/preferences.d/backports'
+      - apt-get update
+      - mk-build-deps --remove --install --tool='apt-get --no-install-recommends --yes' debian/control
+      # Multiple aptpkg tests require a "real" repo to pass, so help it out: tests/pytests/functional/modules/test_aptpkg.py
+      - mkdir -p /etc/apt/keyrings
+      - echo deb https://deb.debian.org/debian/ bullseye main contrib non-free >> /etc/apt/sources.list
+    post-cache:
+      # Salt requires that some tests run as root
+      - sudo -E python3 -m pytest -ra tests/unit tests/pytests/functional tests/pytests/integration tests/pytests/unit
+
+bullseye: *all
+bookworm: *all

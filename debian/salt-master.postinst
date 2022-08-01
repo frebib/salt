@@ -1,0 +1,13 @@
+#!/bin/sh
+set -e
+
+if test "$1" = "configure"; then
+    if ! id salt > /dev/null 2>&1; then
+        adduser --quiet --system --group --home /var/lib/salt --shell /bin/sh salt
+    fi
+    chown --from=root:adm salt:adm $(find /var/log/salt/ -maxdepth 1 -type f -name "master*") /var/log/salt
+fi
+
+#DEBHELPER#
+
+exit 0
