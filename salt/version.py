@@ -246,9 +246,10 @@ class SaltStackVersion:
         "pre_num",
         "noc",
         "sha",
+        "cf",
     )
 
-    git_sha_regex = r"(?P<sha>g?[a-f0-9]{7,40})"
+    git_sha_regex = r"(?P<{}>g?[a-f0-9]{{7,40}})"
 
     git_describe_regex = re.compile(
         r"(?:[^\d]+)?(?P<major>[\d]{1,4})"
@@ -256,11 +257,10 @@ class SaltStackVersion:
         r"(?:\.(?P<bugfix>[\d]{0,2}))?"
         r"(?:\.(?P<mbugfix>[\d]{0,2}))?"
         r"(?:(?P<pre_type>rc|a|b|alpha|beta|nb)(?P<pre_num>[\d]+))?"
-        r"(?:(?:.*)(?:\+|-)(?P<noc>(?:0na|[\d]+|n/a))(?:-|\.)" + git_sha_regex + r")?"
+        r"(?:.*(?:(?:\+|-)?(?:cf(?P<cfrev>[\d]+)(?:(?:-|\.)" + git_sha_regex.format("cfsha") + ")?)|"
+        r"(?:(?:\+|-)(?P<noc>(?:0na|[\d]+|n/a))(?:-|\.)" + git_sha_regex.format("sha") + ")))?"
     )
-    git_sha_regex = r"^" + git_sha_regex
-
-    git_sha_regex = re.compile(git_sha_regex)
+    git_sha_regex = re.compile(r"^" + git_sha_regex.format("sha"))
 
     NAMES = {v.name: v.info for v in SaltVersionsInfo.versions()}
     LNAMES = {k.lower(): v for (k, v) in iter(NAMES.items())}
@@ -277,6 +277,7 @@ class SaltStackVersion:
         pre_num=None,
         noc=0,
         sha=None,
+        cf=False,
     ):
 
         if isinstance(major, str):
@@ -314,6 +315,9 @@ class SaltStackVersion:
         elif isinstance(noc, str) and noc in ("0na", "n/a"):
             noc = -1
         elif isinstance(noc, str):
+            if noc[:2] == "cf":
+                noc = noc[2:]
+                cf = True
             noc = int(noc)
 
         self.major = major
@@ -329,6 +333,7 @@ class SaltStackVersion:
         self.name = self.VNAMES.get(vnames_key)
         self.noc = noc
         self.sha = sha
+        self.cf = bool(cf)
 
     def new_version(self, major):
         """
@@ -350,7 +355,40 @@ class SaltStackVersion:
             raise ValueError(
                 "Unable to parse version string: '{}'".format(version_string)
             )
-        return cls(*match.groups())
+
+        # Assume that the incoming version is from git and doesn't contain `cf`
+        contains_cf = False
+
+        # Mangle the cfrev/cfsha into noc/sha
+        groups = match.groupdict()
+        if groups.get("cfrev"):
+            # Version is already `cf` annotated
+            contains_cf = True
+            groups["cf"] = True
+            groups["noc"] = groups["cfrev"]
+        if groups.get("cfsha"):
+            groups["sha"] = groups["cfsha"]
+        # Always remove the keys
+        groups.pop("cfrev")
+        groups.pop("cfsha")
+
+        ver = cls(**groups)
+
+        if ver.noc and os.getenv("SALT_CF_VERSION") and not ver.cf:
+            ver.cf = True
+        if ver.cf and ver.sha:
+            # Disable the git sha for release builds
+            if os.getenv("SALT_CF_RELEASE"):
+                ver.sha = None
+            # Non-release versions are git-sha releases on the previous commit
+            # but it's important to not re-decrement a version that was already
+            # a `cf` annotated version, else the `cf` revision will get smaller
+            # every time we re-parse it. We only want to decrement if the
+            # version string came from a git version.
+            elif ver.noc > 0 and not contains_cf:
+                ver.noc -= 1
+
+        return ver
 
     @classmethod
     def from_name(cls, name):
@@ -412,6 +450,8 @@ class SaltStackVersion:
     def full_info(self):
         info = self.min_info()
         info.extend([self.pre_type, self.pre_num, self.noc, self.sha])
+        if self.cf:
+            info.append(self.cf)
         return tuple(info)
 
     @property
@@ -431,6 +471,8 @@ class SaltStackVersion:
             self.noc,
             self.sha,
         ]
+        if self.cf:
+            info.append(self.cf)
         return tuple(info)
 
     @property
@@ -445,11 +487,15 @@ class SaltStackVersion:
             version_string += ".{}".format(self.mbugfix)
         if self.pre_type:
             version_string += "{}{}".format(self.pre_type, self.pre_num)
-        if self.noc and self.sha:
-            noc = self.noc
-            if noc < 0:
-                noc = "0na"
-            version_string += "+{}.{}".format(noc, self.sha)
+        if self.noc and (self.cf or self.sha):
+            if self.cf:
+                version_string += "-cf{}".format(self.noc)
+            else:
+                version_string += "+{}".format(self.noc if self.noc >= 0 else "0na")
+
+            # sha can be `None` in cf release builds
+            if self.sha:
+                version_string += ".{}".format(self.sha)
         return version_string
 
     @property
@@ -554,8 +600,12 @@ class SaltStackVersion:
         noc = self.noc
         if noc == -1:
             noc = "0na"
-        if noc and self.sha:
-            parts.extend(["noc={}".format(noc), "sha={}".format(self.sha)])
+        if noc:
+            parts.append("noc={}".format(noc))
+        if self.cf:
+            parts.append("cf={}".format(self.cf))
+        if self.sha:
+            parts.append("sha={}".format(self.sha))
         return "<{} {}>".format(self.__class__.__name__, " ".join(parts))
 
 

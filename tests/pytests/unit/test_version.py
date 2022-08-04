@@ -4,6 +4,7 @@ tests.pytests.unit.test_version
 
 Test salt's regex git describe version parsing
 """
+import os
 import re
 
 import pytest
@@ -17,6 +18,12 @@ from salt.version import (
 from tests.support.mock import MagicMock, patch
 
 STRIP_INITIAL_NON_NUMBERS_REGEX = re.compile(r"(?:[^\d]+)?(?P<vs>.*)")
+
+
+@pytest.fixture(scope="module", autouse=True)
+def clear_environ():
+    os.environ.pop("SALT_CF_VERSION", None)
+    os.environ.pop("SALT_CF_RELEASE", None)
 
 
 @pytest.mark.parametrize(
@@ -53,6 +60,8 @@ STRIP_INITIAL_NON_NUMBERS_REGEX = re.compile(r"(?:[^\d]+)?(?P<vs>.*)")
             (3000, 2, "nb", 20201214010203, 0, "1e7bc8f"),
             "3000.2nb20201214010203",
         ),
+        ("v3000-cf123", (3000, "", 0, 123, None, True), "3000-cf123"),
+        ("v3000rc1-cf1", (3000, "rc", 1, 1, None, True), "3000rc1-cf1"),
     ],
 )
 def test_version_parsing(version_string, full_info, version):
@@ -91,6 +100,13 @@ def test_version_parsing(version_string, full_info, version):
         ("v3000", "v3000rc1"),
         ("v3000", "v2019.2.1"),
         ("v3000.1", "v2019.2.1"),
+        ("v3000.1", "v3000cf1"),
+        ("v3000-cf1", "v3000"),
+        ("v3000-cf2", "v3000-cf1"),
+        ("v3000-cf1", "v2019.2.8-cf2"),
+        ("v3000.2-cf2", "v3000.2-cf1"),
+        ("v3000rc1-cf2", "v3000rc1-cf1"),
+        ("v3000rc2-cf1", "v3000rc1-cf2"),
         # we created v3000.0rc1 tag on repo
         # but we should not be using this
         # version scheme in the future
@@ -236,7 +252,7 @@ def test_noc_info(vstr, noc_info):
     """
     saltstack_version = SaltStackVersion.parse(vstr)
     assert saltstack_version.noc_info, noc_info
-    assert len(saltstack_version.noc_info) == len(noc_info)
+    assert saltstack_version.noc_info == noc_info
 
 
 @pytest.mark.parametrize(
@@ -258,7 +274,7 @@ def test_full_info(vstr, full_info):
     """
     saltstack_version = SaltStackVersion.parse(vstr)
     assert saltstack_version.full_info, full_info
-    assert len(saltstack_version.full_info) == len(full_info)
+    assert saltstack_version.full_info == full_info
 
 
 @pytest.mark.parametrize(
@@ -269,9 +285,10 @@ def test_full_info(vstr, full_info):
         ("v3000", (3000, None, None, 0, "", 0, 0, None)),
         ("v3000.0", (3000, 0, None, 0, "", 0, 0, None)),
         ("v4518.1", (4518, 1, None, 0, "", 0, 0, None)),
-        ("v3000rc1", (3000, None, None, 0, "rc", 2, 0, None)),
+        ("v3000rc1", (3000, None, None, 0, "rc", 1, 0, None)),
         ("v3000rc1-n/a-abcdefff", (3000, None, None, 0, "rc", 1, -1, "abcdefff")),
         ("v3000nb2-0-abcdefff", (3000, None, None, 0, "nb", 2, 0, "abcdefff")),
+        ("v3000cf3-abcdefff", (3000, None, None, 0, "", 0, 3, "abcdefff", True)),
     ],
 )
 def test_full_info_all_versions(vstr, full_info):
@@ -280,7 +297,50 @@ def test_full_info_all_versions(vstr, full_info):
     """
     saltstack_version = SaltStackVersion.parse(vstr)
     assert saltstack_version.full_info_all_versions
-    assert len(saltstack_version.full_info_all_versions) == len(full_info)
+    assert saltstack_version.full_info_all_versions == full_info
+
+
+@pytest.mark.parametrize(
+    "vstr,full_info,expected,is_release",
+    [
+        (
+            "v3000.1.0+9-gabcabca",
+            (3000, 1, 0, 0, "", 0, 8, "gabcabca", True),
+            "3000.1-cf8.gabcabca",
+            False,
+        ),
+        (
+            "v3000rc2+1-aaaaaaa",
+            (3000, None, None, 0, "rc", 2, 1, None, True),
+            "3000rc2-cf1",
+            True,
+        ),
+        (
+            "v3000+6-gabcdefff",
+            (3000, None, None, 0, "", 0, 6, None, True),
+            "3000-cf6",
+            True,
+        ),
+        (
+            "3000.1-n/a-5-1e7bc8f",
+            (3000, 1, None, 0, "", 0, 5, None, True),
+            "3000.1-cf5",
+            True,
+        ),
+    ],
+)
+def test_full_info_all_versions_cloudflare(vstr, full_info, expected, is_release):
+    """
+    Test full_info_all_versions property method with Cloudflare parsing
+    """
+    env = {"SALT_CF_VERSION": "1"}
+    if is_release:
+        env["SALT_CF_RELEASE"] = "1"
+
+    with patch.dict(os.environ, env):
+        saltstack_version = SaltStackVersion.parse(vstr)
+    assert saltstack_version.full_info_all_versions == full_info
+    assert str(saltstack_version) == expected
 
 
 @pytest.mark.parametrize(
