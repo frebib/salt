@@ -1,0 +1,9 @@
+[Unit]
+Description=TPM2 EK certificate trusted HTTP endpoint
+Requires=tpm2-emu.service
+Before=salt-highstate.service salt-minion.service
+After=syslog.target network.target tpm2-emu.service
+
+[Service]
+# start the HTTP server
+ExecStart=/bin/bash -c 'cd /var/www && /usr/bin/python3 -m SimpleHTTPServer 8088'

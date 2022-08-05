@@ -1,0 +1,15 @@
+#!/bin/bash -e
+
+# this script loops until the salt-master is available and the minion's key
+# has been accepted
+
+# echo to stderr
+errcho() {
+    echo $(basename $0): $@ 1>&2
+}
+
+while true; do
+    errcho "waiting for salt master to be available.."
+    /usr/bin/salt-call --skip-grains --skip-pillars test.ping && break
+    sleep 1
+done

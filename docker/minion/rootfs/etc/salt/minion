@@ -1,0 +1,15 @@
+master: salt-master
+# in dev, we want faster retry- no point in waiting 30s if you just booted
+# both this container and the master.  Most of these settings aren't things
+# we necessarily want in prod; however for local salt-compose, yes, we want them.
+retry_dns: 1
+rejected_retry: true
+random_reauth_delay: 1
+master_tries: -1
+
+engines_dirs:
+  - /opt/salt/engines
+
+# an engine, which authenticates with the salt-master using TPMs
+engines:
+  - tpmcertify

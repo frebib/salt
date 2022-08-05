@@ -1,0 +1,34 @@
+[Unit]
+Description=TPM2 emulator
+Before=salt-highstate.service salt-minion.service
+After=syslog.target network.target
+
+[Service]
+# direct tpm2-tools to use the emulator instead of the real TPM
+Environment="TPM2TOOLS_TCTI=mssim:host=localhost,port=2321"
+# for a dummy HTTP server, which will serve the TPM endorsement certificate
+ExecStartPre=/bin/mkdir -p /var/www
+# generate a test CA key and cert which will be used to sign the
+# TPM endorsement certificate
+ExecStartPre=/usr/bin/openssl req -new -x509 -newkey rsa:2048 -subj '/C=US/ST=CA/L=San Francisco/O=Cloudflare, Inc./CN=Cloudflare Salt Test TPM CA/' -keyout /root/tpm_ca.key -out /var/www/tpm_ca.crt -days 7300 -nodes -sha256
+# remove any accidental emulator left-over state
+ExecStartPre=/bin/rm -f /NVChip
+# start the emulator
+ExecStart=/usr/bin/tpm_server
+# TPM emulator takes time to init, so delay a bit before talking to it
+# otherwise below commands might fail failing the whole unit
+ExecStartPost=/bin/sleep 1
+# TPM emulator needs to be explicitly started
+ExecStartPost=/usr/bin/tpm2_startup -c
+# Extend sha256('abc') into PCR 7, because this is our "trusted state" in dev
+# see https://bitbucket.cfdata.org/projects/DEVOPS/repos/salt/browse/conf/dev-master
+ExecStartPost=/usr/bin/tpm2_pcrextend 7:sha256=ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad
+# generate the TPM endorsement key
+ExecStartPost=/usr/bin/tpm2_createek -c 0x81010001 -G rsa
+# write the endorsement public part to a file
+ExecStartPost=/usr/bin/tpm2_readpublic -c 0x81010001 -f pem -o /var/www/ek.pub
+# generate and sign a TPM EK certificate with our test CA
+ExecStartPost=/bin/bash -c '/usr/bin/openssl req -new -key /root/tpm_ca.key -subj "/C=US/ST=CA/L=San Francisco/O=Cloudflare, Inc./CN=$HOSTNAME TPM EK/" | /usr/bin/openssl x509 -req -CA /var/www/tpm_ca.crt -CAkey /root/tpm_ca.key -CAcreateserial -force_pubkey /var/www/ek.pub -out /var/www/ek.crt'
+# generate a Provision-API-like response with the TPM EK certificate
+# generating json from systemd is hard, so using Python
+ExecStartPost=/usr/bin/python3 -c "import json,socket; json.dump({'node_name':socket.gethostname(),'certificates':{'rsa':open('/var/www/ek.crt').read()}}, open('/var/www/' + socket.gethostname(), 'wb'))"

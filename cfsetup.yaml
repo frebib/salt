@@ -25,11 +25,15 @@ all: &all
       # Tests are run separately, not during the deb build
       - export DEB_BUILD_OPTIONS=nocheck
       - export SALT_CF_VERSION=1
+      - python3 salt/version.py | tee VERSION
       # Update the version in debian/changelog so the package gets the right version
-      - dch --controlmaint --distribution=stable --newversion="$(SALT_DEB_VERSION=1 python3 salt/version.py)" "Package release"
+      - dch --controlmaint --distribution=stable --newversion="$(SALT_DEB_VERSION=1 python3 salt/version.py | tee DEB_VERSION)" "Package release"
       - dpkg-buildpackage -b -uc -us
+      - mv ../salt*.deb .
     artifacts:
-      - ../salt*.deb
+      - salt*.deb
+      - VERSION
+      - DEB_VERSION
 
   test:
     # Testing is the same as building, except all we do is run pytest

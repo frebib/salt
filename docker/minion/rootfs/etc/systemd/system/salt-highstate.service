@@ -1,0 +1,27 @@
+[Unit]
+Description=Salt Highstate
+Requires=network.target
+After=syslog.target network.target systemd-hostnamed.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+SyslogIdentifier=salt-highstate
+# salt-minion is masked in baseimg creation process to prevent it from starting very early at boot before hostname is set
+# When this unit is triggered hostname should be already set, so unmask and start salt-minion
+ExecStartPre=/bin/systemctl unmask salt-minion
+ExecStartPre=/bin/systemctl start salt-minion
+ExecStartPre=/bin/bash -c 'while echo "[INFO    ] Waiting for salt master to be available.."; do salt-call --skip-grains --skip-pillars test.ping && break; sleep 10; done'
+ExecStartPre=/bin/echo "[INFO    ] Syncing custom modules"
+ExecStartPre=/usr/bin/salt-call --skip-grains --skip-pillars --retcode-passthrough --log-level=info saltutil.sync_all refresh=false saltenv=base
+ExecStart=/usr/bin/salt-call --retcode-passthrough --log-level=info --output-diff state.apply
+# Do not kill any background commands spawned by highstate when it fails
+KillMode=process
+# We raised default journald limit because we have lots of logs
+# https://jira.cfops.it/browse/PLATOPS-1362
+# https://jira.cfops.it/browse/PLATOPS-263
+# https://jira.cfops.it/browse/EDGEPLAT-1003 - increase burst to 30k/10s
+# because salt-highstate service is unable to log all messages, and we
+# cannot debug failed boot highstates
+LogRateLimitIntervalSec=60s
+LogRateLimitBurst=100000

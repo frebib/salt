@@ -1,6 +1,7 @@
 /build
 /src
 __pycache__/
+/.pybuild/
 *.py[co]
 pkg/arch/*.tar.xz
 *.sw[a-p]
@@ -121,6 +122,15 @@ requirements/static/*/py*/*.log
 
 # Vim's default session file
 Session.vim
+
+# Cloudflare build things
+*.deb
+/artifacts/
+/pkg/
+/VERSION
+/DEB_VERSION
+/build_output.json
+/docker-images.yml
 
 # Tiamat build
 tiamat.log
