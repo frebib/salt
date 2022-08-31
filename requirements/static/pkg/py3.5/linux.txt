@@ -16,7 +16,7 @@ cheroot==8.5.2
     # via cherrypy
 cherrypy==18.6.1
     # via -r requirements/static/pkg/linux.in
-contextvars==2.4
+contextvars==2.4 ; python_version < "3.7"
     # via -r requirements/base.txt
 cryptography==3.0
     # via pyopenssl

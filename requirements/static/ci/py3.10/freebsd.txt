@@ -378,8 +378,6 @@ click==7.1.2
     # via geomet
 clustershell==1.8.3
     # via -r requirements/static/ci/common.in
-contextvars==2.4
-    # via -r requirements/base.txt
 croniter==0.3.29 ; sys_platform != "win32"
     # via -r requirements/static/ci/common.in
 cryptography==3.3.2
@@ -435,8 +433,6 @@ idna==2.8
     #   etcd3-py
     #   requests
     #   yarl
-immutables==0.15
-    # via contextvars
 iniconfig==1.0.1
     # via pytest
 ipaddress==1.0.22

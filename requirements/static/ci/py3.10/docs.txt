@@ -386,8 +386,6 @@ click==8.0.1
     # via geomet
 clustershell==1.8.3
     # via -r requirements/static/ci/common.in
-contextvars==2.4
-    # via -r requirements/base.txt
 croniter==1.0.15 ; sys_platform != "win32"
     # via -r requirements/static/ci/common.in
 cryptography==3.3.2
@@ -441,8 +439,6 @@ idna==2.8
     #   yarl
 imagesize==1.2.0
     # via sphinx
-immutables==0.15
-    # via contextvars
 importlib_metadata==4.6.3 ; python_version >= "3.10"
     # via -r requirements/static/pkg/linux.in
 ipaddress==1.0.23

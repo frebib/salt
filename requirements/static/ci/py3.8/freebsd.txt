@@ -383,8 +383,6 @@ clustershell==1.8.3
     # via -r requirements/static/ci/common.in
 colorama==0.4.3
     # via ciscoconfparse
-contextvars==2.4
-    # via -r requirements/base.txt
 croniter==0.3.29 ; sys_platform != "win32"
     # via -r requirements/static/ci/common.in
 cryptography==3.3.2
@@ -445,8 +443,6 @@ idna==2.8
     #   etcd3-py
     #   requests
     #   yarl
-immutables==0.15
-    # via contextvars
 importlib-metadata==4.6.4 ; python_version >= "3.6" and python_version < "3.10"
     # via -r requirements/static/pkg/freebsd.in
 iniconfig==1.0.1
