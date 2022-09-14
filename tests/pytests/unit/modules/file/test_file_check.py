@@ -7,12 +7,19 @@ import salt.modules.file as filemod
 import salt.utils.files
 import salt.utils.platform
 
+from tests.support.mock import MagicMock, Mock, patch
+
 log = logging.getLogger(__name__)
 
 
 @pytest.fixture
 def configure_loader_modules():
-    return {filemod: {"__context__": {}}}
+    return {
+        filemod: {
+            "__context__": {},
+            "__opts__": {"test": False},
+        }
+    }
 
 
 @pytest.fixture
@@ -142,3 +149,61 @@ def test_check_managed_changes_follow_symlinks(a_link, tfile):
         follow_symlinks=True,
     )
     assert ret == {}
+
+
+@pytest.mark.skip_on_windows(reason="os.symlink is not available on Windows")
+@patch("os.path.exists", Mock(return_value=True))
+def test_check_perms_user_group_name_and_id():
+    filename = "/path/to/fnord"
+
+    tests = [
+        # user/group changes needed by name
+        {
+            "input": {"user": "cuser", "group": "cgroup"},
+            "expected": {"user": "cuser", "group": "cgroup"},
+        },
+        # no changes needed by name
+        {"input": {"user": "luser", "group": "lgroup"}, "expected": {}},
+        # user/group changes needed by id
+        {
+            "input": {"user": 1001, "group": 2001},
+            "expected": {"user": 1001, "group": 2001},
+        },
+        # no user/group changes needed by id
+        {"input": {"user": 3001, "group": 4001}, "expected": {}},
+    ]
+
+    for test in tests:
+        # initial fake file stats
+        stat_out = {
+            "user": "luser",
+            "group": "lgroup",
+            "uid": 3001,
+            "gid": 4001,
+            "mode": "123",
+        }
+
+        patch_stats = patch(
+            "salt.modules.file.stats",
+            Mock(return_value=stat_out),
+        )
+
+        # "chown" the file
+        def fake_chown(cmd, *args, **kwargs):
+            [stat_out.update({k: v}) for k, v in test["input"].items()]
+
+        patch_chown = patch(
+            "salt.modules.file.chown",
+            Mock(side_effect=fake_chown),
+        )
+
+        with patch_stats, patch_chown:
+            ret, pre_post = filemod.check_perms(
+                name=filename,
+                ret={},
+                user=test["input"]["user"],
+                group=test["input"]["group"],
+                mode="123",
+                follow_symlinks=False,
+            )
+            assert ret["changes"] == test["expected"]

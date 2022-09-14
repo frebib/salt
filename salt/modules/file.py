@@ -5029,30 +5029,31 @@ def check_perms(
     # Check permissions
     perms = {}
     cur = stats(name, follow_symlinks=follow_symlinks)
-    perms["luser"] = cur["user"]
-    perms["lgroup"] = cur["group"]
-    perms["lmode"] = salt.utils.files.normalize_mode(cur["mode"])
 
     is_dir = os.path.isdir(name)
     is_link = os.path.islink(name)
 
     # user/group changes if needed, then check if it worked
     if user:
-        if isinstance(user, int):
-            user = uid_to_user(user)
         if (
             salt.utils.platform.is_windows()
-            and user_to_uid(user) != user_to_uid(perms["luser"])
-        ) or (not salt.utils.platform.is_windows() and user != perms["luser"]):
+            and user_to_uid(user) != user_to_uid(cur["user"])
+        ) or (
+            not salt.utils.platform.is_windows()
+            and not user == cur["user"]
+            and not user == cur["uid"]
+        ):
             perms["cuser"] = user
 
     if group:
-        if isinstance(group, int):
-            group = gid_to_group(group)
         if (
             salt.utils.platform.is_windows()
-            and group_to_gid(group) != group_to_gid(perms["lgroup"])
-        ) or (not salt.utils.platform.is_windows() and group != perms["lgroup"]):
+            and group_to_gid(group) != group_to_gid(cur["group"])
+        ) or (
+            not salt.utils.platform.is_windows()
+            and not group == cur["group"]
+            and not group == cur["gid"]
+        ):
             perms["cgroup"] = group
 
     if "cuser" in perms or "cgroup" in perms:
@@ -5062,9 +5063,9 @@ def check_perms(
             else:
                 chown_func = chown
             if user is None:
-                user = perms["luser"]
+                user = cur["user"]
             if group is None:
-                group = perms["lgroup"]
+                group = cur["group"]
             try:
                 chown_func(name, user, group)
                 # Python os.chown() does reset the suid and sgid,
@@ -5073,9 +5074,9 @@ def check_perms(
             except OSError:
                 ret["result"] = False
 
+    # verify changes
+    post = stats(name, follow_symlinks=follow_symlinks)
     if user:
-        if isinstance(user, int):
-            user = uid_to_user(user)
         if (
             salt.utils.platform.is_windows()
             and user_to_uid(user)
@@ -5083,20 +5084,18 @@ def check_perms(
             and user != ""
         ) or (
             not salt.utils.platform.is_windows()
-            and user != get_user(name, follow_symlinks=follow_symlinks)
-            and user != ""
+            and not user == post["user"]
+            and not user == post["uid"]
         ):
             if __opts__["test"] is True:
                 ret["changes"]["user"] = user
             else:
                 ret["result"] = False
                 ret["comment"].append("Failed to change user to {}".format(user))
-        elif "cuser" in perms and user != "":
+        elif "cuser" in perms:
             ret["changes"]["user"] = user
 
     if group:
-        if isinstance(group, int):
-            group = gid_to_group(group)
         if (
             salt.utils.platform.is_windows()
             and group_to_gid(group)
@@ -5104,15 +5103,15 @@ def check_perms(
             and user != ""
         ) or (
             not salt.utils.platform.is_windows()
-            and group != get_group(name, follow_symlinks=follow_symlinks)
-            and user != ""
+            and not group == post["group"]
+            and not group == post["gid"]
         ):
             if __opts__["test"] is True:
                 ret["changes"]["group"] = group
             else:
                 ret["result"] = False
                 ret["comment"].append("Failed to change group to {}".format(group))
-        elif "cgroup" in perms and user != "":
+        elif "cgroup" in perms:
             ret["changes"]["group"] = group
 
     # Mode changes if needed
@@ -5123,7 +5122,7 @@ def check_perms(
             pass
         else:
             mode = salt.utils.files.normalize_mode(mode)
-            if mode != perms["lmode"]:
+            if mode != salt.utils.files.normalize_mode(cur["mode"]):
                 if __opts__["test"] is True:
                     ret["changes"]["mode"] = mode
                 else:
@@ -5498,14 +5497,10 @@ def check_managed_changes(
             __clean_tmp(sfn)
             return False, comments
         if sfn and source and keep_mode:
-            if (
-                urllib.parse.urlparse(source).scheme
-                in (
-                    "salt",
-                    "file",
-                )
-                or source.startswith("/")
-            ):
+            if urllib.parse.urlparse(source).scheme in (
+                "salt",
+                "file",
+            ) or source.startswith("/"):
                 try:
                     mode = __salt__["cp.stat_file"](source, saltenv=saltenv, octal=True)
                 except Exception as exc:  # pylint: disable=broad-except
