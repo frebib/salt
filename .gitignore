@@ -121,3 +121,7 @@ requirements/static/*/py*/*.log
 
 # Vim's default session file
 Session.vim
+
+# Tiamat build
+tiamat.log
+/omni/pkg/

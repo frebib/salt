@@ -48,5 +48,124 @@ all: &all
       # Salt requires that some tests run as root
       - sudo -E python3 -m pytest -ra tests/unit tests/pytests/functional tests/pytests/integration tests/pytests/unit
 
+# Build a tiamat-built omni package for Stretch/Buster with python3.9 from source
+stretch: &omni
+  build-omni:
+    builddeps:
+      # python3 build dependencies
+      - build-essential
+      - libbz2-dev
+      - libexpat-dev
+      - libffi-dev
+      - liblzma-dev
+      - libreadline-dev
+      - libsqlite3-dev
+      - libssl-dev
+      - zlib1g-dev
+      # package dependencies
+      - rubygem-fpm
+    pre-cache:
+      # Only install these deps on amd64; boringssl-fips doesn't exist on arm64
+      - if [ "$(uname -m)" = x86_64 ]; then apt-get install -y libbssl-fips-dev swig openssh-client; fi
+      # EOL distros like Stretch/Buster provide python3 that are too old
+      # and don't work at all/well with Salt >=3005 so instead we build
+      # a known-good Python version for consistency, which tiamat picks
+      # up and bundles into the onedir package.
+      - >-
+          mkdir -p /tmp/python &&
+          cd /tmp/python &&
+          curl -L https://www.python.org/ftp/python/3.9.14/Python-3.9.14.tar.xz | tar --strip-components=1 -xJ &&
+          ./configure --prefix=/usr --enable-optimizations --enable-shared &&
+          make -j$(nproc) &&
+          make install
+      - python3 -m pip install tiamat
+    post-cache:
+      - set -x
+      # Cleanup from previous builds
+      - rm -rf dist omni/pkg python3-m2crypto-fips
+      - >-
+          tiamat build
+          --onedir
+          --name=salt
+          --system-site
+          --system-copy-in=distutils
+          --locale-utf8
+          --timeout=500
+          --log-level=info
+          -r omni/requirements.txt
+      - install -d omni/pkg/usr/bin omni/pkg/opt/saltstack
+      # Build the filesystem structure ready for packaging
+      - mv -Tf dist/run omni/pkg/opt/saltstack/salt
+      - rmdir dist
+      # Build and install m2crypto-fips into the onedir, but only on amd64
+      - >-
+          if [ "$(uname -m)" = x86_64 ]; then
+            git clone git@stash.cfops.it:7999/plat/python-m2crypto-fips.git -b jgroocock/SALT-552/tiamat-support &&
+            make -C python-m2crypto-fips NONSTD_DIRS=1 DESTDIR=$PWD/omni/pkg PREFIX=/opt/saltstack/salt install;
+          fi
+      - install -d omni/pkg/opt/saltstack/salt/pypath omni/pkg/var/{cache,log}/salt
+      - install -Dm644 pkg/salt.bash omni/pkg/usr/share/bash-completion/completions/salt-common
+      - install -Dm644 pkg/salt-common.logrotate omni/pkg/etc/logrotate.d/salt-common
+      - install -Dm755 -t omni/pkg/usr/bin omni/bin/*
+      - install -Dm640 -t omni/pkg/etc/salt conf/{cloud,master,minion,proxy,roster}
+      - install -Dm644 -t omni/pkg/lib/systemd pkg/salt-{api,master,minion,proxy@,syndic}.service
+      - ln -Tsfv /opt/saltstack/salt/run omni/pkg/usr/bin/salt-omni
+      # We (re)do this after building the tiamat package else pyinstaller/wheel complains
+      # about our non-compliant version number and refuses to build a package
+      # Ensure we remove the old version first so it's overwritten
+      - rm -f salt/_version.py
+      - export SALT_CF_VERSION=1
+      - WRITE_SALT_VERSION=1 python3 setup.py write_salt_version
+      - cp salt/_version.py omni/pkg/opt/saltstack/salt/salt/_version.py
+      # Build the package
+      - >-
+          fpm
+          -n salt-omni
+          -v $(SALT_DEB_VERSION=1 python3 salt/version.py)
+          --description 'salt single directory package containing all salt components'
+          --vendor 'Cloudflare Salt Team <salt-releases@cloudflare.com>'
+          --maintainer 'Cloudflare Salt Team <salt-releases@cloudflare.com>'
+          --url https://wiki.cfops.it/display/SALT
+          --deb-field 'Source: salt'
+          --deb-priority optional
+          --category admin
+          --deb-dist stable
+          --deb-suggests "salt-doc (= $(SALT_DEB_VERSION=1 python3 salt/version.py))"
+          --deb-recommends lsb-release
+          --depends iproute2
+          --provides salt-api
+          --provides salt-cloud
+          --provides salt-common
+          --provides salt-master
+          --provides salt-minion
+          --provides salt-proxy
+          --provides salt-ssh
+          --provides salt-syndic
+          --replaces salt-api
+          --replaces salt-cloud
+          --replaces salt-common
+          --replaces salt-master
+          --replaces salt-minion
+          --replaces salt-proxy
+          --replaces salt-ssh
+          --replaces salt-syndic
+          --conflicts salt-api
+          --conflicts salt-cloud
+          --conflicts salt-common
+          --conflicts salt-master
+          --conflicts salt-minion
+          --conflicts salt-proxy
+          --conflicts salt-ssh
+          --conflicts salt-syndic
+          --deb-user root
+          --deb-group root
+          --verbose
+          --force
+          -s dir
+          -t deb
+          -C omni/pkg
+          .
+
+buster: *omni
 bullseye: *all
 bookworm: *all
