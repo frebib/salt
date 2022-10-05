@@ -390,8 +390,6 @@ syndic_user: salt
 # This causes the master to cryptographically sign all messages published to its event
 # bus, and minions then verify that signature before acting on the message.
 #
-# This is False by default.
-#
 # Note that to facilitate interoperability with masters and minions that are different
 # versions, if sign_pub_messages is True but a message is received by a minion with
 # no signature, it will still be accepted, and a warning message will be logged.
@@ -399,21 +397,13 @@ syndic_user: salt
 # message it will be accepted, the signature will not be checked, and a warning message
 # will be logged. This behavior went away in Salt 2014.1.0 and these two situations
 # will cause minion to throw an exception and drop the message.
-# sign_pub_messages: False
+# sign_pub_messages: True
 
 # Signature verification on messages published from minions
 # This requires that minions cryptographically sign the messages they
 # publish to the master.  If minions are not signing, then log this information
 # at loglevel 'INFO' and drop the message without acting on it.
-# require_minion_sign_messages: False
-
-# The below will drop messages when their signatures do not validate.
-# Note that when this option is False but `require_minion_sign_messages` is True
-# minions MUST sign their messages but the validity of their signatures
-# is ignored.
-# These two config options exist so a Salt infrastructure can be moved
-# to signing minion messages gradually.
-# drop_messages_signature_fail: False
+# require_minion_sign_messages: True
 
 # Use TLS/SSL encrypted connection between master and minion.
 # Can be set to a dictionary containing keyword arguments corresponding to Python's

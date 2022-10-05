@@ -356,10 +356,7 @@ class ReqServerChannel:
                     payload["load"]["id"]
                 )
             )
-            if self.opts["drop_messages_signature_fail"]:
-                raise salt.crypt.AuthenticationError(verify_fail_msg)
-            else:
-                log.warning(verify_fail_msg)
+            raise salt.crypt.AuthenticationError(verify_fail_msg)
 
         return payload
 

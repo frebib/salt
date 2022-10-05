@@ -964,9 +964,6 @@ VALID_OPTS = immutabletypes.freeze(
         # Require that the minion sign messages it posts to the master on the event
         # bus
         "minion_sign_messages": bool,
-        # Have master drop messages from minions for which their signatures do
-        # not verify
-        "drop_messages_signature_fail": bool,
         # Require that payloads from minions have a 'sig' entry
         # (in other words, require that minions have 'minion_sign_messages'
         # turned on)
@@ -1025,7 +1022,7 @@ DEFAULT_MINION_OPTS = immutabletypes.freeze(
         "master_failback": False,
         "master_failback_interval": 0,
         "verify_master_pubkey_sign": False,
-        "sign_pub_messages": False,
+        "sign_pub_messages": True,
         "always_verify_signature": False,
         "master_sign_key_name": "master_sign",
         "syndic_finger": "",
@@ -1304,7 +1301,7 @@ DEFAULT_MINION_OPTS = immutabletypes.freeze(
         "salt_cp_chunk_size": 65536,
         "extmod_whitelist": {},
         "extmod_blacklist": {},
-        "minion_sign_messages": False,
+        "minion_sign_messages": True,
         "discovery": False,
         "schedule": {},
         "ssh_merge_pillar": True,
@@ -1650,8 +1647,7 @@ DEFAULT_MASTER_OPTS = immutabletypes.freeze(
         "django_auth_settings": "",
         "allow_minion_key_revoke": True,
         "salt_cp_chunk_size": 98304,
-        "require_minion_sign_messages": False,
-        "drop_messages_signature_fail": False,
+        "require_minion_sign_messages": True,
         "discovery": False,
         "schedule": {},
         "auth_events": True,
