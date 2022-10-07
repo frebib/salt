@@ -2226,6 +2226,10 @@ class Minion(MinionBase):
         if not self.opts["pub_ret"]:
             return ""
 
+        # Scope the return to a specific master by default
+        if not self.opts.get("minion_return_all_masters", False):
+            load["__ret_master"] = self.opts["master"]
+
         def timeout_handler(*_):
             log.warning(
                 "The minion failed to return the job information for job %s. "
@@ -2316,6 +2320,10 @@ class Minion(MinionBase):
                 salt.utils.minion.cache_jobs(self.opts, load["jid"], ret)
 
         load = {"cmd": ret_cmd, "load": list(jids.values())}
+
+        # Scope the return to a specific master by default
+        if not self.opts.get("minion_return_all_masters", False):
+            load["__ret_master"] = self.opts["master"]
 
         def timeout_handler(*_):
             log.warning(
@@ -2684,6 +2692,11 @@ class Minion(MinionBase):
                 notify=data.get("notify", False),
             )
         elif tag.startswith("__master_req_channel_payload"):
+            ret_master = data.pop("__ret_master")
+            if ret_master and ret_master != self.opts["master"]:
+                log.debug("Skipping return to '%s' scoped to specific master '%s'", ret_master, self.opts["master"])
+                return
+
             yield _minion.req_channel.send(
                 data,
                 timeout=_minion._return_retry_timer(),
