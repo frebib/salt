@@ -352,6 +352,8 @@ VALID_OPTS = immutabletypes.freeze(
         # Currently only supported on Windows. On other platforms, use an
         # external tool such as 'logrotate' to manage log files.
         "log_rotate_backup_count": int,
+        # Enable telemetry of salt source code
+        "tracing": dict,
         # If an event is above this size, it will be trimmed before putting it on the event bus
         "max_event_size": int,
         # Enable old style events to be sent on minion_startup. Change default to False in 3001 release
@@ -1197,6 +1199,7 @@ DEFAULT_MINION_OPTS = immutabletypes.freeze(
         "log_granular_levels": {},
         "log_rotate_max_bytes": 0,
         "log_rotate_backup_count": 0,
+        "tracing": {},
         "max_event_size": 1048576,
         "enable_legacy_startup_events": True,
         "test": False,
@@ -1531,6 +1534,7 @@ DEFAULT_MASTER_OPTS = immutabletypes.freeze(
         "log_granular_levels": {},
         "log_rotate_max_bytes": 0,
         "log_rotate_backup_count": 0,
+        "tracing": {},
         "pidfile": os.path.join(salt.syspaths.PIDFILE_DIR, "salt-master.pid"),
         "publish_session": 86400,
         "range_server": "range:80",

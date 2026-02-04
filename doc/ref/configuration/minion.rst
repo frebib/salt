@@ -3504,6 +3504,25 @@ manage log files.
 :conf_log:`log_rotate_backup_count`
 
 
+.. conf_master:: tracing
+
+``tracing``
+---------------------------
+
+Default:  ``{}``
+
+Enable telemetry for salt code.  For example to setup tracing with the OpenTelemetry backend:
+
+.. code-block:: sls
+
+    tracing:
+      otel:
+        agent_host_name: 127.0.0.1
+        agent_port: 6831
+        container_name: salt-master-foo
+        service_name: salt-master
+
+
 .. conf_minion:: zmq_monitor
 
 ``zmq_monitor``

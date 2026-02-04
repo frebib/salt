@@ -914,6 +914,22 @@ class LogLevelMixIn(metaclass=MixInMeta):
         verify_log(self.config)
 
 
+class TracingMixIn(metaclass=MixInMeta):
+    # We want this class order to be right after LogLevelMixin
+    _mixin_prio_ = sys.maxsize - 50
+
+    def _mixin_setup(self):
+        # Add optparse options
+        self._mixin_after_parsed_funcs.append(self.__setup_tracing)
+
+    def __setup_tracing(self):
+        # Now that everything is parsed, let's start configuring tracing
+        try:
+            salt.tracing.setup_tracing(self.config)
+        except Exception as exc:
+            self.exit(salt.defaults.exitcodes.EX_UNAVAILABLE, str(exc))
+
+
 class RunUserMixin(metaclass=MixInMeta):
     _mixin_prio_ = 20
 
@@ -1929,6 +1945,7 @@ class MasterOptionParser(
     ConfigDirMixIn,
     MergeConfigMixIn,
     LogLevelMixIn,
+    TracingMixIn,
     RunUserMixin,
     DaemonMixIn,
     SaltfileMixIn,
@@ -1971,6 +1988,7 @@ class ProxyMinionOptionParser(
     ConfigDirMixIn,
     MergeConfigMixIn,
     LogLevelMixIn,
+    TracingMixIn,
     RunUserMixin,
     DaemonMixIn,
     SaltfileMixIn,
@@ -2003,6 +2021,7 @@ class SyndicOptionParser(
     ConfigDirMixIn,
     MergeConfigMixIn,
     LogLevelMixIn,
+    TracingMixIn,
     RunUserMixin,
     DaemonMixIn,
     SaltfileMixIn,
@@ -2038,6 +2057,7 @@ class SaltCMDOptionParser(
     ExtendedTargetOptionsMixIn,
     OutputOptionsMixIn,
     LogLevelMixIn,
+    TracingMixIn,
     ExecutorsMixIn,
     HardCrashMixin,
     SaltfileMixIn,
@@ -2377,6 +2397,7 @@ class SaltCPOptionParser(
     TimeoutMixIn,
     TargetOptionsMixIn,
     LogLevelMixIn,
+    TracingMixIn,
     HardCrashMixin,
     SaltfileMixIn,
     metaclass=OptionParserMeta,
@@ -2445,6 +2466,7 @@ class SaltKeyOptionParser(
     ConfigDirMixIn,
     MergeConfigMixIn,
     LogLevelMixIn,
+    TracingMixIn,
     OutputOptionsMixIn,
     RunUserMixin,
     HardCrashMixin,
@@ -2782,6 +2804,7 @@ class SaltCallOptionParser(
     ExecutorsMixIn,
     MergeConfigMixIn,
     LogLevelMixIn,
+    TracingMixIn,
     OutputOptionsMixIn,
     HardCrashMixin,
     SaltfileMixIn,
@@ -2997,6 +3020,7 @@ class SaltRunOptionParser(
     MergeConfigMixIn,
     TimeoutMixIn,
     LogLevelMixIn,
+    TracingMixIn,
     HardCrashMixin,
     SaltfileMixIn,
     OutputOptionsMixIn,
@@ -3084,6 +3108,7 @@ class SaltSSHOptionParser(
     ConfigDirMixIn,
     MergeConfigMixIn,
     LogLevelMixIn,
+    TracingMixIn,
     TargetOptionsMixIn,
     OutputOptionsMixIn,
     SaltfileMixIn,
@@ -3422,6 +3447,7 @@ class SaltSSHOptionParser(
 class SaltCloudParser(
     OptionParser,
     LogLevelMixIn,
+    TracingMixIn,
     MergeConfigMixIn,
     OutputOptionsMixIn,
     ConfigDirMixIn,
@@ -3486,6 +3512,7 @@ class SPMParser(
     OptionParser,
     ConfigDirMixIn,
     LogLevelMixIn,
+    TracingMixIn,
     MergeConfigMixIn,
     SaltfileMixIn,
     metaclass=OptionParserMeta,
@@ -3542,6 +3569,7 @@ class SaltAPIParser(
     OptionParser,
     ConfigDirMixIn,
     LogLevelMixIn,
+    TracingMixIn,
     DaemonMixIn,
     MergeConfigMixIn,
     metaclass=OptionParserMeta,
