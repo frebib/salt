@@ -25,6 +25,7 @@ import salt.defaults.events
 import salt.payload
 import salt.runner
 import salt.state
+import salt.tracing
 import salt.utils.args
 import salt.utils.event
 import salt.utils.extmods
@@ -264,6 +265,7 @@ def sync_sdb(saltenv=None, extmod_whitelist=None, extmod_blacklist=None):
     return ret
 
 
+@salt.tracing.with_span
 def sync_modules(
     saltenv=None, refresh=True, extmod_whitelist=None, extmod_blacklist=None
 ):
@@ -322,6 +324,7 @@ def sync_modules(
     return ret
 
 
+@salt.tracing.with_span
 def sync_states(
     saltenv=None, refresh=True, extmod_whitelist=None, extmod_blacklist=None
 ):
@@ -774,6 +777,7 @@ def sync_clouds(
     return ret
 
 
+@salt.tracing.with_span
 def sync_utils(
     saltenv=None, refresh=True, extmod_whitelist=None, extmod_blacklist=None
 ):
@@ -921,6 +925,7 @@ def sync_log_handlers(
     return ret
 
 
+@salt.tracing.with_span
 def sync_pillar(
     saltenv=None,
     refresh=True,
@@ -971,6 +976,7 @@ def sync_pillar(
     return ret
 
 
+@salt.tracing.with_span
 def sync_executors(
     saltenv=None, refresh=True, extmod_whitelist=None, extmod_blacklist=None
 ):
@@ -1012,6 +1018,7 @@ def sync_executors(
     return ret
 
 
+@salt.tracing.with_span
 def sync_all(
     saltenv=None,
     refresh=True,

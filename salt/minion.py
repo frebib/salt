@@ -39,6 +39,7 @@ import salt.payload
 import salt.pillar
 import salt.serializers.msgpack
 import salt.syspaths
+import salt.tracing
 import salt.transport
 import salt.utils.args
 import salt.utils.context
@@ -434,6 +435,7 @@ class MinionBase:
         self.opts = opts
         self.beacons_leader = opts.get("beacons_leader", True)
 
+    @salt.tracing.with_span
     def gen_modules(self, initial_load=False, context=None):
         """
         Tell the minion to reload the execution modules
@@ -1002,6 +1004,7 @@ class MasterMinion:
         self.mk_matcher = matcher
         self.gen_modules(initial_load=True)
 
+    @salt.tracing.with_span
     def gen_modules(self, initial_load=False):
         """
         Tell the minion to reload the execution modules
@@ -1074,6 +1077,7 @@ class MinionManager(MinionBase):
         self.event.set_event_handler(self.handle_event)
 
     @salt.ext.tornado.gen.coroutine
+    @salt.tracing.with_span
     def handle_event(self, package):
         try:
             yield [_.handle_event(package) for _ in self.minions]
@@ -1813,6 +1817,7 @@ class Minion(MinionBase):
         return True
 
     @salt.ext.tornado.gen.coroutine
+    @salt.tracing.with_span
     def _handle_decoded_payload(self, data):
         """
         Override this method if you wish to handle the decoded data
@@ -2009,13 +2014,22 @@ class Minion(MinionBase):
             fname = f"{name}.execute"
             if fname not in self.executors:
                 raise SaltInvocationError(f"Executor '{name}' is not available")
-            return_data = self.executors[fname](opts, data, func, args, kwargs)
-            if return_data is not None:
-                return return_data
+            with salt.tracing.start_as_current_span(__name__, fname):
+                salt.tracing.set_attributes(func=f"{func.__module__}.{func.__name__}")
+                return_data = self.executors[fname](opts, data, func, args, kwargs)
+                if return_data is not None:
+                    if isinstance(return_data, dict):
+                        salt.tracing.set_attributes(
+                            return_jid=return_data.get("jid", "none"),
+                            return_fun_args=return_data.get("fun_args", "none"),
+                            return_master_id=return_data.get("master_id", "none"),
+                        )
+                    return return_data
 
         return None
 
     @classmethod
+    @salt.tracing.with_span
     def _thread_return(cls, minion_instance, opts, data):
         """
         This method should be used as a threading target, start the actual
@@ -2032,6 +2046,13 @@ class Minion(MinionBase):
         log.info("Starting a new job %s with PID %s", data["jid"], sdata["pid"])
         with salt.utils.files.fopen(fn_, "w+b") as fp_:
             fp_.write(salt.payload.dumps(sdata))
+
+        salt.tracing.set_attributes(
+            function_name=data["fun"],
+            jid=data["jid"],
+            pid=sdata["pid"],
+        )
+
         ret = {"success": False}
         function_name = data["fun"]
         function_args = data["arg"]
@@ -2054,6 +2075,8 @@ class Minion(MinionBase):
                 return_data = minion_instance._execute_job_function(
                     function_name, function_args, executors, opts, data
                 )
+
+                salt.tracing.set_attributes(function_name=function_name)
 
                 if isinstance(return_data, types.GeneratorType):
                     ind = 0
@@ -2090,39 +2113,40 @@ class Minion(MinionBase):
                         retcode = salt.defaults.exitcodes.EX_GENERIC
 
                 ret["retcode"] = retcode
-                ret["success"] = retcode == salt.defaults.exitcodes.EX_OK
+                salt.tracing.set_attributes(retcode=retcode)
+
+                success = retcode == salt.defaults.exitcodes.EX_OK
+                ret["success"] = success
+                salt.tracing.set_attributes(success=success)
             except CommandNotFoundError as exc:
                 msg = f"Command required for '{function_name}' not found"
                 log.debug(msg, exc_info=True)
+                salt.tracing.record_exception_as_error(exc, msg)
+
                 ret["return"] = f"{msg}: {exc}"
                 ret["out"] = "nested"
                 ret["retcode"] = salt.defaults.exitcodes.EX_GENERIC
             except CommandExecutionError as exc:
-                log.error(
-                    "A command in '%s' had a problem: %s",
-                    function_name,
-                    exc,
-                    exc_info_on_loglevel=logging.DEBUG,
-                )
+                msg = f"A command in '{function_name}' had a problem"
+                log.error("%s: %s", msg, exc, exc_info_on_loglevel=logging.DEBUG)
+                salt.tracing.record_exception_as_error(exc, msg)
+
                 ret["return"] = f"ERROR: {exc}"
                 ret["out"] = "nested"
                 ret["retcode"] = salt.defaults.exitcodes.EX_GENERIC
             except SaltInvocationError as exc:
-                log.error(
-                    "Problem executing '%s': %s",
-                    function_name,
-                    exc,
-                    exc_info_on_loglevel=logging.DEBUG,
-                )
+                msg = f"Problem executing '{function_name}'"
+                log.error("%s: %s", msg, exc, exc_info_on_loglevel=logging.DEBUG)
+                salt.tracing.record_exception_as_error(exc, msg)
+
                 ret["return"] = f"ERROR executing '{function_name}': {exc}"
                 ret["out"] = "nested"
                 ret["retcode"] = salt.defaults.exitcodes.EX_GENERIC
             except SaltClientError as exc:
-                log.error(
-                    "Problem executing '%s': %s",
-                    function_name,
-                    exc,
-                )
+                msg = f"Problem executing '{function_name}'"
+                log.error("%s: %s", msg, exc)
+                salt.tracing.record_exception_as_error(exc, msg)
+
                 ret["return"] = f"ERROR executing '{function_name}': {exc}"
                 ret["out"] = "nested"
                 ret["retcode"] = salt.defaults.exitcodes.EX_GENERIC
@@ -2137,12 +2161,16 @@ class Minion(MinionBase):
                     minion_instance.functions[function_name].__doc__ or "",
                 )
                 log.warning(msg, exc_info_on_loglevel=logging.DEBUG)
+                salt.tracing.record_exception_as_error(exc, msg)
+
                 ret["return"] = msg
                 ret["out"] = "nested"
                 ret["retcode"] = salt.defaults.exitcodes.EX_GENERIC
-            except Exception:  # pylint: disable=broad-except
+            except Exception as exc:  # pylint: disable=broad-except
                 msg = "The minion function caused an exception"
                 log.warning(msg, exc_info_on_loglevel=True)
+                salt.tracing.record_exception_as_error(exc, msg)
+
                 salt.utils.error.fire_exception(
                     salt.exceptions.MinionError(msg), opts, job=data
                 )
@@ -2582,6 +2610,7 @@ class Minion(MinionBase):
             include_startup_grains=include_grains,
         )
 
+    @salt.tracing.with_span
     def module_refresh(self, force_refresh=False, notify=False):
         """
         Refresh the functions and returners.
@@ -2648,6 +2677,7 @@ class Minion(MinionBase):
 
     # TODO: only allow one future in flight at a time?
     @salt.ext.tornado.gen.coroutine
+    @salt.tracing.with_span
     def pillar_refresh(self, force_refresh=False, clean_cache=False):
         """
         Refresh the pillar
@@ -2666,12 +2696,14 @@ class Minion(MinionBase):
             )
             try:
                 new_pillar = yield async_pillar.compile_pillar()
-            except SaltClientError:
-                # Do not exit if a pillar refresh fails.
-                log.error(
+            except SaltClientError as exc:
+                msg = (
                     "Pillar data could not be refreshed. "
                     "One or more masters may be down!"
                 )
+                salt.tracing.record_exception_as_error(exc, msg)
+                # Do not exit if a pillar refresh fails.
+                log.error(msg)
             else:
                 current_schedule = self.opts["pillar"].get("schedule", {})
                 new_schedule = new_pillar.get("schedule", {})

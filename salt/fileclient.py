@@ -20,6 +20,7 @@ import salt.crypt
 import salt.fileserver
 import salt.loader
 import salt.payload
+import salt.tracing
 import salt.utils.atomicfile
 import salt.utils.data
 import salt.utils.files
@@ -1170,6 +1171,7 @@ class RemoteClient(Client):
         if channel is not None:
             channel.close()
 
+    @salt.tracing.with_span
     def get_file(
         self, path, dest="", makedirs=False, saltenv="base", gzip=None, cachedir=None
     ):
@@ -1179,6 +1181,7 @@ class RemoteClient(Client):
         dest is omitted, then the downloaded file will be placed in the minion
         cache
         """
+        salt.tracing.set_attributes(path=path)
         path, senv = salt.utils.url.split_env(path)
         if senv:
             saltenv = senv

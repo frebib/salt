@@ -15,6 +15,7 @@ import salt.loader
 import salt.minion
 import salt.output
 import salt.payload
+import salt.tracing
 import salt.utils.args
 import salt.utils.files
 import salt.utils.jid
@@ -157,6 +158,20 @@ class BaseCaller:
                 "jid": ret["jid"],
                 "tgt": "salt-call",
             }
+<<<<<<< HEAD
+=======
+
+            # Add arg to `sdata` if the function is allow listed
+            if fun in self.opts["salt_call_arg_funcs_allow_list"]:
+                sdata["arg"] = self.opts["arg"]
+
+            # Create new dict of values instead of using sdata in case
+            # sensitive data ever gets added to sdata.
+            salt.tracing.set_attributes(
+                fun=fun, pid=os.getpid(), jid=ret["jid"], tgt="salt-call"
+            )
+
+>>>>>>> b3a7e094766 (PLATCONF-78: Add Tracing Spans to SaltStack Code)
             if metadata is not None:
                 sdata["metadata"] = metadata
             args, kwargs = salt.minion.load_args_and_kwargs(
@@ -197,9 +212,13 @@ class BaseCaller:
                     fname = f"{name}.execute"
                     if fname not in self.minion.executors:
                         raise SaltInvocationError(f"Executor '{name}' is not available")
-                    ret["return"] = self.minion.executors[fname](
-                        self.opts, data, func, args, kwargs
-                    )
+                    with salt.tracing.start_as_current_span(__name__, fname):
+                        salt.tracing.set_attributes(
+                            func=f"{func.__module__}.{func.__name__}"
+                        )
+                        ret["return"] = self.minion.executors[fname](
+                            self.opts, data, func, args, kwargs
+                        )
                     if ret["return"] is not None:
                         break
             except TypeError as exc:
@@ -283,6 +302,12 @@ class BaseCaller:
         elif self.opts["cache_jobs"]:
             # Local job cache has been enabled
             salt.utils.minion.cache_jobs(self.opts, ret["jid"], ret)
+
+        salt.tracing.set_attributes(
+            retcode=ret.get("retcode", "unknown"),
+            success=str(ret.get("success", "unknown")),
+            id=ret["id"],
+        )
 
         return ret
 

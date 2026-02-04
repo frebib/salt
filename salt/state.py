@@ -31,6 +31,7 @@ import salt.loader
 import salt.minion
 import salt.pillar
 import salt.syspaths as syspaths
+import salt.tracing
 import salt.utils.args
 import salt.utils.crypt
 import salt.utils.data
@@ -371,6 +372,7 @@ class Compiler:
         self.opts = opts
         self.rend = renderers
 
+    @salt.tracing.with_span
     def render_template(self, template, **kwargs):
         """
         Enforce the states in a template
@@ -436,6 +438,7 @@ class Compiler:
                 skeys.add(key)
         return high
 
+    @salt.tracing.with_span
     def verify_high(self, high):
         """
         Verify that the high data is viable and follows the data structure
@@ -605,6 +608,7 @@ class Compiler:
                             )
         return errors
 
+    @salt.tracing.with_span
     def order_chunks(self, chunks):
         """
         Sort the chunk list verifying that the chunks follow the order
@@ -644,6 +648,7 @@ class Compiler:
         )
         return chunks
 
+    @salt.tracing.with_span
     def compile_high_data(self, high):
         """
         "Compile" the high data as it is retrieved from the CLI or YAML into
@@ -1497,6 +1502,7 @@ class State:
                         )
         return errors
 
+    @salt.tracing.with_span
     def verify_high(self, high):
         """
         Verify that the high data is viable and follows the data structure
@@ -1712,7 +1718,26 @@ class State:
         )
         return chunks
 
-    def compile_high_data(self, high, orchestration_jid=None):
+    def _reconcile_watch_req(self, low: LowChunk):
+        """
+        Change watch requisites to require if mod_watch is not available.
+        """
+        if RequisiteType.WATCH in low:
+            if f"{low['state']}.mod_watch" not in self.states:
+                low.setdefault(RequisiteType.REQUIRE.value, []).extend(
+                    low.pop(RequisiteType.WATCH)
+                )
+        if RequisiteType.WATCH_ANY in low:
+            if f"{low['state']}.mod_watch" not in self.states:
+                low.setdefault(RequisiteType.REQUIRE_ANY.value, []).extend(
+                    low.pop(RequisiteType.WATCH_ANY)
+                )
+
+    @salt.tracing.with_span
+    def compile_high_data(
+        self, high: dict[str, Any], orchestration_jid: Union[str, int, None] = None
+    ) -> tuple[list[LowChunk], list[str]]:
+>>>>>>> b3a7e094766 (PLATCONF-78: Add Tracing Spans to SaltStack Code)
         """
         "Compile" the high data as it is retrieved from the CLI or YAML into
         the individual state executor structures
@@ -2325,11 +2350,25 @@ class State:
         return ret
 
     @salt.utils.decorators.state.OutputUnifier("content_check", "unify")
+<<<<<<< HEAD
     def call(self, low, chunks=None, running=None, retries=1):
+=======
+    @salt.tracing.with_span
+    def call(
+        self,
+        low: LowChunk,
+        chunks: Optional[Sequence[LowChunk]] = None,
+        running: Optional[dict[str, dict]] = None,
+        retries: int = 1,
+    ):
+>>>>>>> b3a7e094766 (PLATCONF-78: Add Tracing Spans to SaltStack Code)
         """
         Call a state directly with the low data structure, verify data
         before processing.
         """
+        name = low["name"].strip() if isinstance(low["name"], str) else low["name"]
+        salt.tracing.set_attributes(name=name)
+
         utc_start_time = datetime.datetime.utcnow()
         local_start_time = utc_start_time - (
             datetime.datetime.utcnow() - datetime.datetime.now()
@@ -2581,6 +2620,17 @@ class State:
                         "is returned".format(**low["retry"]),
                     ]
                 )
+
+        salt.tracing.set_attributes(
+            state_sls=ret["__sls__"],
+            state_func=state_func_name,
+            state_run_num=ret["__run_num__"],
+            state_id=ret["__id__"],
+            state_failed=not ret["result"],
+            state_changed=bool(ret["changes"]),
+            comment=ret["comment"],
+        )
+
         return ret
 
     def __eval_slot(self, slot):
@@ -2755,7 +2805,16 @@ class State:
             validated_retry_data = retry_defaults
         return validated_retry_data
 
+<<<<<<< HEAD
     def call_chunks(self, chunks):
+=======
+    @salt.tracing.with_span
+    def call_chunks(
+        self,
+        chunks: Sequence[LowChunk],
+        disabled_states: Optional[dict[str, dict[str, Any]]] = None,
+    ) -> dict[str, Any]:
+>>>>>>> b3a7e094766 (PLATCONF-78: Add Tracing Spans to SaltStack Code)
         """
         Iterate over a list of chunks and call them, checking for requires.
         """
@@ -3454,7 +3513,81 @@ class State:
 
         return running
 
+<<<<<<< HEAD
     def call_beacons(self, chunks, running):
+=======
+    def _assign_not_run_result_dict(
+        self,
+        low: LowChunk,
+        tag: str,
+        result: bool,
+        comment: str,
+        running: dict[str, dict],
+    ) -> None:
+        start_time, duration = _calculate_fake_duration()
+        ret = {
+            "changes": {},
+            "result": result,
+            "duration": duration,
+            "start_time": start_time,
+            "comment": comment,
+            "__state_ran__": False,
+            "__run_num__": self.__run_num,
+        }
+        for key in ("__sls__", "__id__", "name"):
+            ret[key] = low.get(key)
+        running[tag] = ret
+        if low.get("__prereq__"):
+            self.pre[tag] = ret
+        self.__run_num += 1
+
+    def _call_unmet_requisites(
+        self,
+        low: LowChunk,
+        running: dict[str, dict],
+        chunks: Sequence[LowChunk],
+        tag: str,
+        depth: int,
+    ) -> dict[str, dict]:
+        for _, chunk in self.dependency_dag.get_dependencies(low):
+            # Check to see if the chunk has been run, only run it if
+            # it has not been run already
+            ctag = _gen_tag(chunk)
+            if ctag not in running:
+                running = self.call_chunk(chunk, running, chunks)
+                if self.check_failhard(chunk, running):
+                    running["__FAILHARD__"] = True
+                    return running
+        if low.get("__prereq__"):
+            status, _ = self._check_requisites(low, running)
+            self.pre[tag] = self.call(low, chunks, running)
+            if not self.pre[tag]["changes"] and status == "change":
+                self.pre[tag]["changes"] = {"watch": "watch"}
+                self.pre[tag]["result"] = None
+        else:
+            depth += 1
+            # even this depth is being generous. This shouldn't exceed 1 no
+            # matter how the loops are happening
+            if depth >= 20:
+                log.error("Recursive requisite found")
+                running[tag] = {
+                    "changes": {},
+                    "result": False,
+                    "comment": "Recursive requisite found",
+                    "__run_num__": self.__run_num,
+                }
+                for key in ("__sls__", "__id__", "name"):
+                    running[tag][key] = low.get(key)
+            else:
+                running = self.call_chunk(low, running, chunks, depth)
+        if self.check_failhard(low, running):
+            running["__FAILHARD__"] = True
+            return running
+        return {}
+
+    @salt.tracing.with_span
+    def call_beacons(self, chunks: Iterable[LowChunk], running: dict) -> dict:
+>>>>>>> b3a7e094766 (PLATCONF-78: Add Tracing Spans to SaltStack Code)
         """
         Find all of the beacon routines and call the associated mod_beacon runs
         """
@@ -3479,7 +3612,12 @@ class State:
         running.update(errors)
         return running
 
+<<<<<<< HEAD
     def call_listen(self, chunks, running):
+=======
+    @salt.tracing.with_span
+    def call_listen(self, chunks: Iterable[LowChunk], running: dict) -> dict:
+>>>>>>> b3a7e094766 (PLATCONF-78: Add Tracing Spans to SaltStack Code)
         """
         Find all of the listen routines and call the associated mod_watch runs
         """
@@ -3582,7 +3720,14 @@ class State:
         running.update(errors)
         return running
 
+<<<<<<< HEAD
     def call_high(self, high, orchestration_jid=None):
+=======
+    @salt.tracing.with_span
+    def call_high(
+        self, high: HighData, orchestration_jid: Union[str, int, None] = None
+    ) -> Union[dict, list]:
+>>>>>>> b3a7e094766 (PLATCONF-78: Add Tracing Spans to SaltStack Code)
         """
         Process a high data call and ensure the defined states.
         """
@@ -3632,6 +3777,7 @@ class State:
 
         return ret
 
+    @salt.tracing.with_span
     def render_template(self, high, template):
         errors = []
         if not high:
@@ -3894,6 +4040,7 @@ class BaseHighState:
             envs.extend([env for env in client_envs if env not in envs])
             return envs
 
+    @salt.tracing.with_span
     def get_tops(self, context=None):
         """
         Gather the top files
@@ -4342,6 +4489,7 @@ class BaseHighState:
             self.state.opts["pillar"] = self.state._gather_pillar()
         self.state.module_refresh()
 
+    @salt.tracing.with_span
     def render_state(self, sls, saltenv, mods, matches, local=False, context=None):
         """
         Render a state file and retrieve all of the include states
@@ -4365,6 +4513,7 @@ class BaseHighState:
             )
         else:
             try:
+                salt.tracing.set_attributes(filename=fn_)
                 state = compile_template(
                     fn_,
                     self.state.rend,
@@ -4542,6 +4691,9 @@ class BaseHighState:
                     log.critical("Could not render SLS %s. Syntax error detected.", sls)
         else:
             state = {}
+
+        if errors:
+            salt.tracing.set_span_status_error(" ".join(errors))
         return state, errors
 
     def _handle_iorder(self, state):
@@ -4683,6 +4835,7 @@ class BaseHighState:
                 errors.append(err)
             state.setdefault("__exclude__", []).extend(exc)
 
+    @salt.tracing.with_span
     def render_highstate(self, matches, context=None):
         """
         Gather the state files and render them into a single unified salt
@@ -4797,6 +4950,7 @@ class BaseHighState:
                     ret_matches[env].append(sls)
         return ret_matches
 
+    @salt.tracing.with_span
     def call_highstate(
         self,
         exclude=None,

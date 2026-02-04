@@ -18,6 +18,7 @@ import salt.defaults.events
 import salt.defaults.exitcodes
 import salt.loader.context
 import salt.syspaths
+import salt.tracing
 import salt.utils.context
 import salt.utils.data
 import salt.utils.dictupdate
@@ -81,6 +82,7 @@ SALT_INTERNAL_LOADERS_PATHS = (
 )
 
 
+@salt.tracing.with_span(prefix="loader")
 def static_loader(
     opts,
     ext_type,
@@ -367,6 +369,7 @@ def minion_mods(
     return ret
 
 
+@salt.tracing.with_span(prefix="loader")
 def raw_mod(opts, name, functions, mod="modules", loaded_base_name=None):
     """
     Returns a single module loaded raw and bypassing the __virtual__ function
@@ -407,6 +410,7 @@ def raw_mod(opts, name, functions, mod="modules", loaded_base_name=None):
     return dict({x: loader[x] for x in loader._dict})
 
 
+@salt.tracing.with_span(prefix="loader")
 def metaproxy(opts, loaded_base_name=None):
     """
     Return functions used in the meta proxy
@@ -439,6 +443,7 @@ def matchers(opts, loaded_base_name=None):
     )
 
 
+@salt.tracing.with_span(prefix="loader")
 def engines(opts, functions, runners, utils, proxy=None, loaded_base_name=None):
     """
     Return the engines plugins
@@ -467,6 +472,7 @@ def engines(opts, functions, runners, utils, proxy=None, loaded_base_name=None):
     )
 
 
+@salt.tracing.with_span(prefix="loader")
 def proxy(
     opts,
     functions=None,
@@ -505,6 +511,7 @@ def proxy(
     )
 
 
+@salt.tracing.with_span(prefix="loader")
 def returners(
     opts, functions, whitelist=None, context=None, proxy=None, loaded_base_name=None
 ):
@@ -530,6 +537,7 @@ def returners(
     )
 
 
+@salt.tracing.with_span(prefix="loader")
 def utils(
     opts,
     whitelist=None,
@@ -566,6 +574,7 @@ def utils(
     )
 
 
+@salt.tracing.with_span(prefix="loader")
 def pillars(opts, functions, context=None, loaded_base_name=None):
     """
     Returns the pillars modules
@@ -590,6 +599,7 @@ def pillars(opts, functions, context=None, loaded_base_name=None):
     return FilterDictWrapper(ret, ".ext_pillar")
 
 
+@salt.tracing.with_span(prefix="loader")
 def tops(opts, loaded_base_name=None):
     """
     Returns the tops modules
@@ -611,6 +621,7 @@ def tops(opts, loaded_base_name=None):
     return FilterDictWrapper(ret, ".top")
 
 
+@salt.tracing.with_span(prefix="loader")
 def wheels(opts, whitelist=None, context=None, loaded_base_name=None):
     """
     Returns the wheels modules
@@ -634,6 +645,7 @@ def wheels(opts, whitelist=None, context=None, loaded_base_name=None):
     )
 
 
+@salt.tracing.with_span(prefix="loader")
 def outputters(opts, loaded_base_name=None):
     """
     Returns the outputters modules
@@ -655,6 +667,7 @@ def outputters(opts, loaded_base_name=None):
     return wrapped_ret
 
 
+@salt.tracing.with_span(prefix="loader")
 def serializers(opts, loaded_base_name=None):
     """
     Returns the serializers modules
@@ -671,6 +684,7 @@ def serializers(opts, loaded_base_name=None):
     )
 
 
+@salt.tracing.with_span(prefix="loader")
 def eauth_tokens(opts, loaded_base_name=None):
     """
     Returns the tokens modules
@@ -687,6 +701,7 @@ def eauth_tokens(opts, loaded_base_name=None):
     )
 
 
+@salt.tracing.with_span(prefix="loader")
 def auth(opts, whitelist=None, loaded_base_name=None):
     """
     Returns the auth modules
@@ -709,6 +724,7 @@ def auth(opts, whitelist=None, loaded_base_name=None):
     )
 
 
+@salt.tracing.with_span(prefix="loader")
 def fileserver(opts, backends, loaded_base_name=None):
     """
     Returns the file server modules
@@ -748,6 +764,7 @@ def fileserver(opts, backends, loaded_base_name=None):
     )
 
 
+@salt.tracing.with_span(prefix="loader")
 def roster(opts, runner=None, utils=None, whitelist=None, loaded_base_name=None):
     """
     Returns the roster modules
@@ -770,6 +787,7 @@ def roster(opts, runner=None, utils=None, whitelist=None, loaded_base_name=None)
     )
 
 
+@salt.tracing.with_span(prefix="loader")
 def thorium(opts, functions, runners, loaded_base_name=None):
     """
     Load the thorium runtime modules
@@ -792,6 +810,7 @@ def thorium(opts, functions, runners, loaded_base_name=None):
     return ret
 
 
+@salt.tracing.with_span(prefix="loader")
 def states(
     opts,
     functions,
@@ -848,6 +867,7 @@ def states(
     )
 
 
+@salt.tracing.with_span(prefix="loader")
 def beacons(opts, functions, context=None, proxy=None, loaded_base_name=None):
     """
     Load the beacon modules
@@ -890,6 +910,7 @@ def log_handlers(opts, loaded_base_name=None):
     return FilterDictWrapper(ret, ".setup_handlers")
 
 
+@salt.tracing.with_span(prefix="loader")
 def ssh_wrapper(
     opts, functions=None, context=None, file_client=None, loaded_base_name=None
 ):
@@ -919,6 +940,7 @@ def ssh_wrapper(
     )
 
 
+@salt.tracing.with_span(prefix="loader")
 def render(
     opts,
     functions,
@@ -983,6 +1005,7 @@ def render(
     return rend
 
 
+@salt.tracing.with_span(prefix="loader")
 def grain_funcs(opts, proxy=None, context=None, loaded_base_name=None):
     """
     Returns the grain functions
@@ -1071,6 +1094,7 @@ def _load_cached_grains(opts, cfn):
         return None
 
 
+@salt.tracing.with_span(prefix="loader")
 def grains(opts, force_refresh=False, proxy=None, context=None, loaded_base_name=None):
     """
     Return the functions for the dynamic grains and the values for the static
@@ -1275,6 +1299,7 @@ def grains(opts, force_refresh=False, proxy=None, context=None, loaded_base_name
 
 
 # TODO: get rid of? Does anyone use this? You should use raw() instead
+@salt.tracing.with_span(prefix="loader")
 def call(fun, **kwargs):
     """
     Directly call a function inside a loader directory
@@ -1293,6 +1318,7 @@ def call(fun, **kwargs):
     return funcs[fun](*args)
 
 
+@salt.tracing.with_span(prefix="loader")
 def runner(opts, utils=None, context=None, whitelist=None, loaded_base_name=None):
     """
     Directly call a function inside a loader directory
@@ -1322,6 +1348,7 @@ def runner(opts, utils=None, context=None, whitelist=None, loaded_base_name=None
     )
 
 
+@salt.tracing.with_span(prefix="loader")
 def queues(opts, loaded_base_name=None):
     """
     Directly call a function inside a loader directory
@@ -1338,6 +1365,7 @@ def queues(opts, loaded_base_name=None):
     )
 
 
+@salt.tracing.with_span(prefix="loader")
 def sdb(opts, functions=None, whitelist=None, utils=None, loaded_base_name=None):
     """
     Make a very small database call
@@ -1367,6 +1395,7 @@ def sdb(opts, functions=None, whitelist=None, utils=None, loaded_base_name=None)
     )
 
 
+@salt.tracing.with_span(prefix="loader")
 def pkgdb(opts, loaded_base_name=None):
     """
     Return modules for SPM's package database
@@ -1385,6 +1414,7 @@ def pkgdb(opts, loaded_base_name=None):
     )
 
 
+@salt.tracing.with_span(prefix="loader")
 def pkgfiles(opts, loaded_base_name=None):
     """
     Return modules for SPM's file handling
@@ -1404,6 +1434,7 @@ def pkgfiles(opts, loaded_base_name=None):
     )
 
 
+@salt.tracing.with_span(prefix="loader")
 def clouds(opts, loaded_base_name=None):
     """
     Return the cloud functions
@@ -1440,6 +1471,7 @@ def clouds(opts, loaded_base_name=None):
     return functions
 
 
+@salt.tracing.with_span(prefix="loader")
 def netapi(opts, loaded_base_name=None):
     """
     Return the network api functions
@@ -1456,6 +1488,7 @@ def netapi(opts, loaded_base_name=None):
     )
 
 
+@salt.tracing.with_span(prefix="loader")
 def executors(opts, functions=None, context=None, proxy=None, loaded_base_name=None):
     """
     Returns the executor modules
@@ -1482,6 +1515,7 @@ def executors(opts, functions=None, context=None, proxy=None, loaded_base_name=N
     )
 
 
+@salt.tracing.with_span(prefix="loader")
 def cache(opts, loaded_base_name=None):
     """
     Returns the returner modules

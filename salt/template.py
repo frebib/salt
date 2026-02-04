@@ -8,6 +8,7 @@ import logging
 import os
 import time
 
+import salt.tracing
 import salt.utils.data
 import salt.utils.files
 import salt.utils.sanitizers
@@ -24,6 +25,7 @@ SLS_ENCODING = "utf-8"  # this one has no BOM.
 SLS_ENCODER = codecs.getencoder(SLS_ENCODING)
 
 
+@salt.tracing.with_span
 def compile_template(
     template,
     renderers,
@@ -71,6 +73,7 @@ def compile_template(
             log.debug("Template is an empty file: %s", template)
             return ret
 
+        salt.tracing.set_attributes(template=template, sls=sls, saltenv=saltenv)
         with codecs.open(template, encoding=SLS_ENCODING) as ifile:
             # data input to the first render function in the pipe
             input_data = ifile.read()

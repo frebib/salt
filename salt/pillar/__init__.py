@@ -17,11 +17,13 @@ import salt.ext.tornado.gen
 import salt.fileclient
 import salt.loader
 import salt.minion
+import salt.tracing
 import salt.utils.args
 import salt.utils.cache
 import salt.utils.crypt
 import salt.utils.data
 import salt.utils.dictupdate
+import salt.utils.objsizeof
 import salt.utils.url
 from salt.exceptions import SaltClientError
 from salt.template import compile_template
@@ -97,6 +99,7 @@ def get_pillar(
 
 
 # TODO: migrate everyone to this one!
+@salt.tracing.with_span
 def get_async_pillar(
     opts,
     grains,
@@ -120,6 +123,9 @@ def get_async_pillar(
     ptype = {"remote": AsyncRemotePillar, "local": AsyncPillar}.get(
         file_client, AsyncPillar
     )
+
+    salt.tracing.set_attributes(minion_id=minion_id, file_client=file_client)
+
     if file_client == "remote":
         # AsyncPillar does not currently support calls to PillarCache
         # clean_cache is a kwarg for PillarCache
@@ -250,6 +256,7 @@ class AsyncRemotePillar(RemotePillarMixin):
         self.clean_cache = clean_cache
 
     @salt.ext.tornado.gen.coroutine
+    @salt.tracing.with_span
     def compile_pillar(self):
         """
         Return a future which will contain the pillar data from the master
@@ -276,14 +283,18 @@ class AsyncRemotePillar(RemotePillarMixin):
             )
         except salt.crypt.AuthenticationError as exc:
             log.error(exc.message)
-            raise SaltClientError("Exception getting pillar.")
-        except salt.exceptions.SaltReqTimeoutError:
-            raise SaltClientError(
-                f"Pillar timed out after {int(time.monotonic() - start)} seconds"
-            )
-        except Exception:  # pylint: disable=broad-except
-            log.exception("Exception getting pillar:")
-            raise SaltClientError("Exception getting pillar.")
+            msg = "Exception getting pillar."
+            salt.tracing.record_exception_as_error(exc, msg)
+            raise SaltClientError(msg)
+        except salt.exceptions.SaltReqTimeoutError as exc:
+            msg = f"Pillar timed out after {int(time.monotonic() - start)} seconds"
+            salt.tracing.record_exception_as_error(exc, msg)
+            raise SaltClientError(msg)
+        except Exception as exc:  # pylint: disable=broad-except
+            msg = "Exception getting pillar."
+            log.exception(msg)
+            salt.tracing.record_exception_as_error(exc, msg)
+            raise SaltClientError(msg)
         self.validate_return(ret_pillar)
         raise salt.ext.tornado.gen.Return(ret_pillar)
 
@@ -342,10 +353,12 @@ class RemotePillar(RemotePillarMixin):
         )
         self._closing = False
 
+    @salt.tracing.with_span
     def compile_pillar(self):
         """
         Return the pillar data from the master
         """
+        salt.tracing.set_attributes(minion_id=self.minion_id)
         load = {
             "id": self.minion_id,
             "grains": self.grains,
@@ -367,6 +380,7 @@ class RemotePillar(RemotePillarMixin):
             )
         except salt.crypt.AuthenticationError as exc:
             log.error(exc.message)
+<<<<<<< HEAD
             raise SaltClientError("Exception getting pillar.")
         except salt.exceptions.SaltReqTimeoutError:
             raise SaltClientError(
@@ -376,6 +390,34 @@ class RemotePillar(RemotePillarMixin):
             log.exception("Exception getting pillar:")
             raise SaltClientError("Exception getting pillar.")
         self.validate_return(ret_pillar)
+=======
+            msg = "Exception getting pillar."
+            salt.tracing.record_exception_as_error(exc, msg)
+            raise SaltClientError(msg)
+        except salt.exceptions.SaltReqTimeoutError as exc:
+            msg = f"Pillar timed out after {int(time.monotonic() - start)} seconds"
+            salt.tracing.record_exception_as_error(exc, msg)
+            raise SaltClientError(msg)
+        except Exception as exc:  # pylint: disable=broad-except
+            msg = "Exception getting pillar."
+            log.exception(msg)
+            salt.tracing.record_exception_as_error(exc, msg)
+            raise SaltClientError(msg)
+
+        if not isinstance(ret_pillar, dict):
+            msg = "Got a bad pillar from master, type {}, expecting dict: {}".format(
+                type(ret_pillar).__name__, ret_pillar
+            )
+
+            log.error(msg)
+            salt.tracing.set_span_status_error(msg)
+            return {}
+
+        with salt.tracing.start_as_current_span(__name__, "objsizeof_calculation"):
+            pillar_size_bytes = salt.utils.objsizeof.total_size(ret_pillar)
+        salt.tracing.set_attributes(pillar_size_bytes=pillar_size_bytes)
+
+>>>>>>> b3a7e094766 (PLATCONF-78: Add Tracing Spans to SaltStack Code)
         return ret_pillar
 
     def destroy(self):
@@ -455,6 +497,7 @@ class PillarCache:
         """
         return os.path.join(self.opts["cachedir"], "pillar_cache", minion_id)
 
+    @salt.tracing.with_span
     def fetch_pillar(self):
         """
         In the event of a cache miss, we need to incur the overhead of caching
@@ -482,6 +525,7 @@ class PillarCache:
 
         return True
 
+    @salt.tracing.with_span
     def compile_pillar(self, *args, **kwargs):  # Will likely just be pillar_dirs
         if self.clean_cache:
             self.clear_pillar()
@@ -710,7 +754,12 @@ class Pillar:
             envs.extend([x for x in list(self.opts["pillar_roots"]) if x not in envs])
         return envs
 
+<<<<<<< HEAD
     def get_tops(self):
+=======
+    @salt.tracing.with_span
+    def get_tops(self, failhard):
+>>>>>>> b3a7e094766 (PLATCONF-78: Add Tracing Spans to SaltStack Code)
         """
         Gather the top files
         """
@@ -753,7 +802,9 @@ class Pillar:
                         )
                     )
         except Exception as exc:  # pylint: disable=broad-except
-            errors.append(f"Rendering Primary Top file failed, render error:\n{exc}")
+            _msg = "Rendering Primary Top file failed, render error"
+            salt.tracing.record_exception_as_error(exc, _msg)
+            errors.append(f"{_msg}:\n{exc}")
             log.exception("Pillar rendering failed for minion %s", self.minion_id)
 
         # Search initial top files for includes
@@ -787,11 +838,19 @@ class Pillar:
                             )
                         )
                     except Exception as exc:  # pylint: disable=broad-except
+<<<<<<< HEAD
                         errors.append(
                             "Rendering Top file {} failed, render error:\n{}".format(
                                 sls, exc
                             )
                         )
+=======
+                        _msg = f"Rendering Top file {sls} failed"
+                        salt.tracing.record_exception_as_error(exc, _msg)
+                        errors.append(f"{_msg}, render error:\n{exc}")
+                        if failhard and errors:
+                            return {}, errors
+>>>>>>> b3a7e094766 (PLATCONF-78: Add Tracing Spans to SaltStack Code)
                     done[saltenv].append(sls)
             for saltenv in pops:
                 if saltenv in include:
@@ -799,6 +858,7 @@ class Pillar:
 
         return tops, errors
 
+    @salt.tracing.with_span
     def merge_tops(self, tops):
         """
         Cleanly merge the top files
@@ -897,10 +957,16 @@ class Pillar:
                             env_matches.append(item)
         return matches
 
+<<<<<<< HEAD
     def render_pstate(self, sls, saltenv, mods, defaults=None):
+=======
+    @salt.tracing.with_span
+    def render_pstate(self, sls, saltenv, mods, failhard, defaults=None):
+>>>>>>> b3a7e094766 (PLATCONF-78: Add Tracing Spans to SaltStack Code)
         """
         Collect a single pillar sls file and render it
         """
+        salt.tracing.set_attributes(sls=sls)
         if defaults is None:
             defaults = {}
         err = ""
@@ -945,6 +1011,7 @@ class Pillar:
                 # return state, mods, errors
                 return None, mods, errors
         state = None
+        salt.tracing.set_attributes(filename=fn_)
         try:
             state = compile_template(
                 fn_,
@@ -1067,7 +1134,12 @@ class Pillar:
                                     )
         return state, mods, errors
 
+<<<<<<< HEAD
     def render_pillar(self, matches, errors=None):
+=======
+    @salt.tracing.with_span
+    def render_pillar(self, matches, failhard, errors=None):
+>>>>>>> b3a7e094766 (PLATCONF-78: Add Tracing Spans to SaltStack Code)
         """
         Extract the sls pillar files from the matches and render them into the
         pillar
@@ -1121,10 +1193,12 @@ class Pillar:
 
         return pillar, errors
 
+    @salt.tracing.with_span
     def _external_pillar_data(self, pillar, val, key):
         """
         Builds actual pillar data structure and updates the ``pillar`` variable
         """
+        salt.tracing.set_attributes(key=key)
         ext = None
         args = salt.utils.args.get_function_argspec(self.ext_pillars[key]).args
 
@@ -1158,9 +1232,19 @@ class Pillar:
                 )
             else:
                 ext = self.ext_pillars[key](self.minion_id, pillar, val)
+
+        with salt.tracing.start_as_current_span(__name__, "objsizeof_calculation"):
+            pillar_size_bytes = salt.utils.objsizeof.total_size(ext)
+        salt.tracing.set_attributes(ext_pillar_size_bytes=pillar_size_bytes)
+
         return ext
 
+<<<<<<< HEAD
     def ext_pillar(self, pillar, errors=None):
+=======
+    @salt.tracing.with_span
+    def ext_pillar(self, pillar, failhard, errors=None):
+>>>>>>> b3a7e094766 (PLATCONF-78: Add Tracing Spans to SaltStack Code)
         """
         Render the external pillar data
         """
@@ -1241,6 +1325,7 @@ class Pillar:
                 ext = None
         return pillar, errors
 
+    @salt.tracing.with_span
     def compile_pillar(self, ext=True):
         """
         Render the pillar data and return
@@ -1300,7 +1385,12 @@ class Pillar:
             pillar.setdefault("_errors", []).extend(decrypt_errors)
         return pillar
 
+<<<<<<< HEAD
     def decrypt_pillar(self, pillar):
+=======
+    @salt.tracing.with_span
+    def decrypt_pillar(self, pillar, failhard):
+>>>>>>> b3a7e094766 (PLATCONF-78: Add Tracing Spans to SaltStack Code)
         """
         Decrypt the specified pillar dictionary items, if configured to do so
         """

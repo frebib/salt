@@ -2,6 +2,7 @@ import os
 
 import salt.cli.caller
 import salt.defaults.exitcodes
+import salt.tracing
 import salt.utils.parsers
 from salt.config import _expand_glob_path
 
@@ -11,6 +12,7 @@ class SaltCall(salt.utils.parsers.SaltCallOptionParser):
     Used to locally execute a salt command
     """
 
+    @salt.tracing.with_span
     def run(self):
         """
         Execute the salt call!
@@ -36,6 +38,13 @@ class SaltCall(salt.utils.parsers.SaltCallOptionParser):
             self.config["file_client"] = "local"
         if self.options.master:
             self.config["master"] = self.options.master
+
+        salt.tracing.set_attributes(
+            fun=self.config["fun"],
+            arg=self.config.get("arg", "none"),
+            pillar=self.config.get("pillar", "none"),
+            master=self.config.get("master"),
+        )
 
         caller = salt.cli.caller.Caller.factory(self.config)
 
